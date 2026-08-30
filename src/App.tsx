@@ -1,6 +1,7 @@
 
 import GroupsPage from './pages/GroupsPage';
 import React, { useEffect } from 'react';
+import StudentProfilePage from './pages/StudentProfilePage';
 import {
   BrowserRouter,
   Routes,
@@ -196,6 +197,11 @@ export default function App() {
       )}
     </ProtectedPlatform>
   }
+/>
+
+<Route
+  path="/admin/students/:studentId"
+  element={<StudentProfilePage />}
 />
 
         {/* =========================

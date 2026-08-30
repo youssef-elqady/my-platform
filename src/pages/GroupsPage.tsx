@@ -3012,9 +3012,7 @@ export default function GroupsPage() {
                   null
                 );
 
-                navigate(
-                  '/admin/students'
-                );
+                navigate(`/admin/students/${selectedStudent.id}`);
               }}
               className="mt-6 w-full rounded-xl bg-blue-500 px-5 py-3 text-sm font-black text-white transition hover:bg-blue-400"
             >
@@ -3106,7 +3104,6 @@ export default function GroupsPage() {
     </div>
   </div>
 )}
-
     </div>
   );
 }
