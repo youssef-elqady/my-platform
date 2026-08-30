@@ -3,6 +3,7 @@ import React, {
   useEffect,
   useMemo,
   useState,
+  
 } from 'react';
 
 import {
@@ -12,6 +13,10 @@ import {
 import {
   supabase,
 } from '../lib/supabase';
+
+import {
+  Trash2,
+} from 'lucide-react';
 
 /* =========================================================
    TYPES
@@ -252,6 +257,9 @@ export default function GroupsPage() {
 
   const [removingStudentId, setRemovingStudentId] =
     useState<string | null>(null);
+
+    const [studentToRemove, setStudentToRemove] =
+  useState<GroupMember | null>(null);
 
   /* =======================================================
      STUDENT QUICK CARD
@@ -1329,118 +1337,73 @@ export default function GroupsPage() {
      REMOVE STUDENT
   ======================================================= */
 
-  const removeStudent =
-    async (
-      member: GroupMember
-    ) => {
-      if (
-        !membersGroup
-      ) {
-        return;
+  const removeStudent = async (member: GroupMember) => {
+  if (!membersGroup) return;
+
+  try {
+    setRemovingStudentId(member.student_id);
+
+    const { error } = await supabase
+      .from('group_members')
+      .delete()
+      .eq('id', member.id)
+      .eq('group_id', membersGroup.id);
+
+    if (error) {
+      console.error('Remove student database error:', error);
+      throw error;
+    }
+
+    // إزالة الطالب من قائمة أعضاء المجموعة
+    setGroupMembers((current) =>
+      current.filter((item) => item.id !== member.id)
+    );
+
+    // إرجاع الطالب لقائمة الطلاب المتاحين
+    setAvailableStudents((current) => {
+      const alreadyExists = current.some(
+        (student) => student.id === member.student_id
+      );
+
+      if (alreadyExists) {
+        return current;
       }
 
-      const confirmed =
-        window.confirm(
-          `هل أنت متأكد من إزالة الطالب "${member.student.full_name}" من المجموعة؟`
-        );
+      return [...current, member.student].sort((a, b) =>
+        a.full_name.localeCompare(b.full_name, 'ar')
+      );
+    });
 
-      if (!confirmed) {
-        return;
-      }
+    // تحديث عدد الطلاب في المجموعة
+    setGroups((current) =>
+      current.map((group) =>
+        group.id === membersGroup.id
+          ? {
+              ...group,
+              member_count: Math.max(
+                0,
+                group.member_count - 1
+              ),
+            }
+          : group
+      )
+    );
 
-      try {
-        setRemovingStudentId(
-          member.student_id
-        );
+    // إغلاق نافذة التأكيد
+    setStudentToRemove(null);
 
-        const {
-          error,
-        } = await supabase
-          .from('group_members')
-          .delete()
-          .eq(
-            'id',
-            member.id
-          );
+    showToast('تمت إزالة الطالب من المجموعة');
+  } catch (error) {
+    console.error('Remove student error:', error);
 
-        if (error) {
-          throw error;
-        }
-
-        setGroupMembers(
-          (
-            current
-          ) =>
-            current.filter(
-              (
-                item
-              ) =>
-                item.id !==
-                member.id
-            )
-        );
-
-        setAvailableStudents(
-          (
-            current
-          ) => [
-            ...current,
-            member.student,
-          ].sort(
-            (
-              a,
-              b
-            ) =>
-              a.full_name.localeCompare(
-                b.full_name,
-                'ar'
-              )
-          )
-        );
-
-        setGroups(
-          (
-            current
-          ) =>
-            current.map(
-              (
-                group
-              ) =>
-                group.id ===
-                membersGroup.id
-                  ? {
-                      ...group,
-                      member_count:
-                        Math.max(
-                          0,
-                          group.member_count -
-                            1
-                        ),
-                    }
-                  : group
-            )
-        );
-
-        showToast(
-          'تمت إزالة الطالب من المجموعة'
-        );
-      } catch (error) {
-        console.error(
-          'Remove student error:',
-          error
-        );
-
-        showToast(
-          'تعذر إزالة الطالب',
-          'error'
-        );
-      } finally {
-        setRemovingStudentId(
-          null
-        );
-      }
-    };
-
+    showToast(
+      'تعذر إزالة الطالب. تأكد من صلاحيات قاعدة البيانات.',
+      'error'
+    );
+  } finally {
+    setRemovingStudentId(null);
+  }
+};
   /* =======================================================
      FILTER AVAILABLE STUDENTS
   ======================================================= */
@@ -2736,10 +2699,7 @@ export default function GroupsPage() {
                               removingStudentId ===
                               member.student_id
                             }
-                            onClick={() =>
-                              removeStudent(
-                                member
-                              )
+                           onClick={() => setStudentToRemove(member)
                             }
                             className="shrink-0 rounded-xl bg-red-500/10 px-3 py-2 text-xs font-bold text-red-400 transition hover:bg-red-500/20 disabled:opacity-40"
                           >
@@ -3085,6 +3045,67 @@ export default function GroupsPage() {
           }
         />
       )}
+
+            )
+
+      {studentToRemove && (
+  <div
+    className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 p-4"
+    dir="rtl"
+  >
+    <div className="w-full max-w-md rounded-3xl bg-slate-900 p-6 shadow-2xl">
+
+      <div className="mb-5 text-center">
+        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-red-500/10 text-3xl">
+          ⚠️
+        </div>
+
+        <h2 className="text-xl font-black text-white">
+          إزالة الطالب
+        </h2>
+
+        <p className="mt-3 text-sm text-slate-400">
+          هل أنت متأكد من إزالة
+        </p>
+
+        <p className="mt-1 font-black text-white">
+          {studentToRemove.student.full_name}
+        </p>
+
+        <p className="mt-3 text-xs text-slate-500">
+          سيتم إزالته من هذه المجموعة فقط ولن يتم حذف حسابه.
+        </p>
+      </div>
+
+      <div className="flex gap-3">
+
+        <button
+          type="button"
+          onClick={() => setStudentToRemove(null)}
+          className="flex-1 rounded-xl bg-white/5 px-4 py-3 font-bold text-slate-300 hover:bg-white/10"
+        >
+          إلغاء
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            removeStudent(studentToRemove);
+          }}
+          disabled={
+            removingStudentId === studentToRemove.student_id
+          }
+          className="flex-1 rounded-xl bg-red-600 px-4 py-3 font-bold text-white hover:bg-red-700 disabled:opacity-50"
+        >
+          {removingStudentId === studentToRemove.student_id
+            ? 'جاري الإزالة...'
+            : 'نعم، إزالة'}
+        </button>
+
+      </div>
+    </div>
+  </div>
+)}
 
     </div>
   );
