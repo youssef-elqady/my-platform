@@ -57,7 +57,7 @@ interface GroupMember {
   id: string;
   group_id: string;
   student_id: string;
-  joined_at: string;
+  created_at: string;
   student: Student;
 }
 
@@ -964,157 +964,126 @@ export default function GroupsPage() {
       }
     };
 
+
   /* =======================================================
      LOAD GROUP MEMBERS
   ======================================================= */
 
-  const loadGroupMembers =
-    useCallback(
-      async (
-        groupId: string
-      ) => {
-        try {
-          setMembersLoading(
-            true
-          );
+  const loadGroupMembers = useCallback(
+    async (groupId: string) => {
+      try {
+        setMembersLoading(true);
 
-          /*
-            أولًا:
-            نجيب أعضاء المجموعة فقط.
-          */
+        const {
+          data: memberRows,
+          error: membersError,
+        } = await supabase
+          .from('group_members')
+          .select(`
+            id,
+            group_id,
+            student_id,
+            created_at
+          `)
+          .eq('group_id', groupId)
+          .order('created_at', {
+            ascending: false,
+          });
 
-          const loadGroupMembers = useCallback(
-  async (groupId: string) => {
-    try {
-      setMembersLoading(true);
+        if (membersError) {
+          throw membersError;
+        }
 
-      // 1. تحميل أعضاء المجموعة
-      const {
-        data: memberRows,
-        error: membersError,
-      } = await supabase
-        .from('group_members')
-        .select(`
-          id,
-          group_id,
-          student_id,
-          joined_at
-        `)
-        .eq('group_id', groupId)
-        .order('joined_at', {
-          ascending: false,
-        });
+        if (!memberRows || memberRows.length === 0) {
+          setGroupMembers([]);
+          return;
+        }
 
-      if (membersError) {
-        throw membersError;
-      }
+        const studentIds = memberRows
+          .map((member) => member.student_id)
+          .filter(Boolean);
 
-      if (!memberRows || memberRows.length === 0) {
-        setGroupMembers([]);
-        return;
-      }
+        if (studentIds.length === 0) {
+          setGroupMembers([]);
+          return;
+        }
 
-      // 2. استخراج IDs الطلاب
-      const studentIds = memberRows
-        .map((member) => member.student_id)
-        .filter(Boolean);
+        const {
+          data: studentsData,
+          error: studentsError,
+        } = await supabase
+          .from('users')
+          .select(`
+            id,
+            full_name,
+            phone,
+            student_code,
+            status,
+            role,
+            avatar_url,
+            created_at,
+            is_active
+          `)
+          .in('id', studentIds);
 
-      if (studentIds.length === 0) {
-        setGroupMembers([]);
-        return;
-      }
+        if (studentsError) {
+          throw studentsError;
+        }
 
-      // 3. تحميل بيانات الطلاب من users
-const {
-  data: studentsData,
-  error: studentsError,
-} = await supabase
-  .from('users')
-  .select(`
-    id,
-    full_name,
-    phone,
-    student_code,
-    role,
-    avatar_url,
-    created_at,
-    is_active
-  `)
-  .in('id', studentIds);
+        const students =
+          (studentsData || []) as Student[];
 
-if (studentsError) {
-  console.error('Students load error:', studentsError);
-  throw studentsError;
-}
+        const members: GroupMember[] =
+          memberRows
+            .map((member) => {
+              const student =
+                students.find(
+                  (item) =>
+                    item.id ===
+                    member.student_id
+                );
 
-const students: Student[] = (studentsData || []).map((student) => ({
-  id: student.id,
-  full_name: student.full_name,
-  phone: student.phone ?? null,
-  student_code: student.student_code ?? null,
-  status: 'active',
-  role: student.role,
-  avatar_url: student.avatar_url ?? null,
-  created_at: student.created_at,
-  is_active: student.is_active,
-}));
+              if (!student) {
+                return null;
+              }
 
-      // 4. دمج بيانات المجموعة مع بيانات الطلاب
-      const members: GroupMember[] = memberRows
-        .map((member) => {
-          const student = students.find(
-            (item) =>
-              item.id === member.student_id
-          );
+              return {
+                id: member.id,
+                group_id: member.group_id,
+                student_id:
+                  member.student_id,
+                created_at:
+                  member.created_at,
+                student,
+              };
+            })
+            .filter(
+              (
+                member
+              ): member is GroupMember =>
+                member !== null
+            );
 
-          if (!student) {
-            return null;
-          }
-
-          return {
-            id: member.id,
-            group_id: member.group_id,
-            student_id: member.student_id,
-            joined_at: member.joined_at,
-            student,
-          };
-        })
-        .filter(
-          (member): member is GroupMember =>
-            member !== null
+        setGroupMembers(members);
+      } catch (error) {
+        console.error(
+          'Group members load error:',
+          error
         );
 
-      setGroupMembers(members);
-    } catch (error) {
-      console.error(
-        'Group members load error:',
-        error
-      );
+        showToast(
+          'تعذر تحميل طلاب المجموعة',
+          'error'
+        );
 
-      showToast(
-        'تعذر تحميل طلاب المجموعة',
-        'error'
-      );
+        setGroupMembers([]);
+      } finally {
+        setMembersLoading(false);
+      }
+    },
+    [showToast]
+  );
 
-      setGroupMembers([]);
-    } finally {
-      setMembersLoading(false);
-    }
-  },
-  [showToast]
-);
-
-          setGroupMembers(
-            []
-          );
-        } finally {
-          setMembersLoading(
-            false
-          );
-        }
-      },
-      [showToast]
-    );
 
   /* =======================================================
      LOAD AVAILABLE STUDENTS
