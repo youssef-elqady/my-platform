@@ -20,6 +20,13 @@ alter table public.exams add column if not exists instructions text;
 alter table public.exams add column if not exists result_mode text not null default 'after_submit';
 alter table public.exams add column if not exists pass_percentage numeric(5,2) not null default 50;
 alter table public.exams add column if not exists auto_submit_on_tab_switch boolean not null default false;
+
+-- Normalize legacy/unknown values before enforcing the new domain.
+update public.exams
+set result_mode = 'after_submit'
+where result_mode is null
+   or result_mode not in ('after_submit','after_window','manual');
+
 alter table public.exams add constraint exams_result_mode_valid check (result_mode in ('after_submit','after_window','manual'));
 alter table public.exams add constraint exams_pass_percentage_valid check (pass_percentage between 0 and 100);
 
