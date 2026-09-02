@@ -10,6 +10,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import StudentDashboard from './pages/StudentDashboard';
 import StudentsPage from './pages/StudentsPage';
 import AdminSuitePage from './pages/AdminSuitePage';
+import AdminAdvancedPage from './pages/AdminAdvancedPage';
 import ExamQuestionsPage from './pages/ExamQuestionsPage';
 
 function ProtectedPlatform({ children }: { children: React.ReactNode }) {
@@ -28,15 +29,15 @@ export default function App() { const { initialize, profile } = useAuthStore(); 
   <Route path="/admin/groups" element={<ProtectedPlatform><AdminOnly><GroupsPage /></AdminOnly></ProtectedPlatform>} />
   <Route path="/admin/courses" element={<ProtectedPlatform><AdminOnly><CoursesPage /></AdminOnly></ProtectedPlatform>} />
   <Route path="/admin/analytics" element={<ProtectedPlatform><AdminOnly><AdminAnalyticsPage /></AdminOnly></ProtectedPlatform>} />
-  <Route path="/admin/lessons" element={<ProtectedPlatform><AdminOnly><AdminSuitePage mode="lessons" /></AdminOnly></ProtectedPlatform>} />
-  <Route path="/admin/assignments" element={<ProtectedPlatform><AdminOnly><AdminSuitePage mode="assignments" /></AdminOnly></ProtectedPlatform>} />
+  <Route path="/admin/lessons" element={<ProtectedPlatform><AdminOnly><AdminAdvancedPage mode="lessons" /></AdminOnly></ProtectedPlatform>} />
+  <Route path="/admin/assignments" element={<ProtectedPlatform><AdminOnly><AdminAdvancedPage mode="assignments" /></AdminOnly></ProtectedPlatform>} />
   <Route path="/admin/exams" element={<ProtectedPlatform><AdminOnly><AdminSuitePage mode="exams" /></AdminOnly></ProtectedPlatform>} />
   <Route path="/admin/exams/:examId/questions" element={<ProtectedPlatform><AdminOnly><ExamQuestionsPage /></AdminOnly></ProtectedPlatform>} />
   <Route path="/admin/grades" element={<ProtectedPlatform><AdminOnly><AdminSuitePage mode="grades" /></AdminOnly></ProtectedPlatform>} />
-  <Route path="/admin/attendance" element={<ProtectedPlatform><AdminOnly><AdminSuitePage mode="attendance" /></AdminOnly></ProtectedPlatform>} />
+  <Route path="/admin/attendance" element={<ProtectedPlatform><AdminOnly><AdminAdvancedPage mode="attendance" /></AdminOnly></ProtectedPlatform>} />
   <Route path="/admin/activation-codes" element={<ProtectedPlatform><AdminOnly><AdminSuitePage mode="activation-codes" /></AdminOnly></ProtectedPlatform>} />
-  <Route path="/admin/staff" element={<ProtectedPlatform><AdminOnly><AdminSuitePage mode="staff" /></AdminOnly></ProtectedPlatform>} />
-  <Route path="/admin/notifications" element={<ProtectedPlatform><AdminOnly><AdminSuitePage mode="notifications" /></AdminOnly></ProtectedPlatform>} />
+  <Route path="/admin/staff" element={<ProtectedPlatform><AdminOnly><AdminAdvancedPage mode="staff" /></AdminOnly></ProtectedPlatform>} />
+  <Route path="/admin/notifications" element={<ProtectedPlatform><AdminOnly><AdminAdvancedPage mode="notifications" /></AdminOnly></ProtectedPlatform>} />
   <Route path="/admin/settings" element={<ProtectedPlatform><AdminOnly><AdminSuitePage mode="settings" /></AdminOnly></ProtectedPlatform>} />
   <Route path="/" element={<ProtectedPlatform>{profile?.role === 'admin' ? <AdminDashboard /> : <StudentDashboard />}</ProtectedPlatform>} />
   <Route path="*" element={<Navigate to="/" replace />} />
