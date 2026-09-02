@@ -1,6 +1,6 @@
 import GroupsPage from './pages/GroupsPage';
 import React, { useEffect } from 'react';
-import StudentProfilePage from './pages/StudentProfilePage';
+import StudentProfileWithAnalytics from './pages/StudentProfileWithAnalytics';
 import AdminAnalyticsPage from './pages/AdminAnalyticsPage';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './store/authStore';
@@ -29,7 +29,7 @@ export default function App() {
   return <BrowserRouter><Routes>
     <Route path="/auth" element={<AuthPage />} />
     <Route path="/admin/students" element={<ProtectedPlatform><AdminOnly><StudentsPage /></AdminOnly></ProtectedPlatform>} />
-    <Route path="/admin/students/:studentId" element={<ProtectedPlatform><AdminOnly><StudentProfilePage /></AdminOnly></ProtectedPlatform>} />
+    <Route path="/admin/students/:studentId" element={<ProtectedPlatform><AdminOnly><StudentProfileWithAnalytics /></AdminOnly></ProtectedPlatform>} />
     <Route path="/admin/groups" element={<ProtectedPlatform><AdminOnly><GroupsPage /></AdminOnly></ProtectedPlatform>} />
     <Route path="/admin/analytics" element={<ProtectedPlatform><AdminOnly><AdminAnalyticsPage /></AdminOnly></ProtectedPlatform>} />
     <Route path="/" element={<ProtectedPlatform>{profile?.role === 'admin' ? <AdminDashboard /> : <StudentDashboard />}</ProtectedPlatform>} />
