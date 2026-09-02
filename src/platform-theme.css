@@ -2,7 +2,7 @@
 :root[data-theme='light'] { color-scheme: light; --platform-bg:#f4f1fb; --platform-surface:#ffffff; --platform-surface-strong:#ffffff; --platform-text:#172033; --platform-muted:#64748b; --platform-border:rgba(76,29,149,.14); }
 :root[data-theme='light'] html,:root[data-theme='light'] body { background:#f4f1fb !important; color:#172033 !important; }
 :root[data-theme='light'] [class*="bg-[#07090f]"],:root[data-theme='light'] [class*="bg-[#07090E]"] { background:#f4f1fb !important; }
-:root[data-theme='light'] [class*="bg-[#0d1118]"],:root[data-theme='light'] [class*="bg-[#0d1119]"],:root[data-theme='light'] [class*="bg-[#11151d]"],:root[data-theme='light'] [class*="bg-[#10131d]"],:root[data-theme='light'] [class*="bg-[#10151f"]"] { background:#ffffff !important; }
+:root[data-theme='light'] [class*="bg-[#0d1118]"],:root[data-theme='light'] [class*="bg-[#0d1119]"],:root[data-theme='light'] [class*="bg-[#11151d]"],:root[data-theme='light'] [class*="bg-[#10131d]"],:root[data-theme='light'] [class*="bg-[#10151f]"] { background:#ffffff !important; }
 :root[data-theme='light'] [class*="bg-black/10"],:root[data-theme='light'] [class*="bg-black/20"],:root[data-theme='light'] [class*="bg-white/[0.02]"],:root[data-theme='light'] [class*="bg-white/[0.025]"],:root[data-theme='light'] [class*="bg-white/[0.03]"],:root[data-theme='light'] [class*="bg-white/[0.035]"],:root[data-theme='light'] [class*="bg-white/[0.04]"],:root[data-theme='light'] [class*="bg-white/[0.05]"],:root[data-theme='light'] [class*="bg-white/[0.055]"] { background:#ffffff !important; }
 :root[data-theme='light'] [class*="border-white/[0.06]"],:root[data-theme='light'] [class*="border-white/[0.07]"],:root[data-theme='light'] [class*="border-white/[0.08]"],:root[data-theme='light'] [class*="border-white/[0.1]"] { border-color:var(--platform-border) !important; }
 :root[data-theme='light'] [class*="text-white"] { color:#172033 !important; }
@@ -17,7 +17,6 @@
 :root[data-theme='light'] ::-webkit-scrollbar-track { background:#ede9fe; }
 :root[data-theme='light'] ::-webkit-scrollbar-thumb { background:#c4b5fd; }
 
-/* Chemistry-first brand mark: the homepage no longer relies on the Arabic initial as its visual identity. */
 .home-page .brand-mark { font-size:0 !important; }
 .home-page .brand-mark::before { content:'⚗'; font-size:1.45rem; line-height:1; }
 .home-page .brand p:first-child { white-space:normal !important; overflow:visible !important; text-overflow:clip !important; line-height:1.35 !important; }
@@ -29,6 +28,5 @@
   .home-page .hero-copy h1 { font-size:2.15rem !important; }
   .home-page .hero-copy p { font-size:.92rem !important; line-height:1.9 !important; }
 }
-
 @media print { .print\:hidden { display:none !important; } body { background:#fff !important; } }
 @media (prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior:auto !important; animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; } }
