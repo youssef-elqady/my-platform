@@ -1,21 +1,215 @@
-import React from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
+import {
+  Activity, ArrowLeft, Award, Bell, BookOpen, Brain, CalendarDays, CheckCircle2,
+  ChevronLeft, Clock3, Flame, GraduationCap, LayoutDashboard, LogOut, Menu,
+  Moon, PlayCircle, RefreshCw, Sparkles, Sun, Target, TrendingDown, TrendingUp,
+  Trophy, Video, X, Zap
+} from 'lucide-react';
+
+type Row = Record<string, any>;
+type Tone = 'blue' | 'violet' | 'emerald' | 'amber' | 'rose';
+
+const nf = (n: number) => Number(n || 0).toLocaleString('ar-EG');
+const pct = (n: number) => `${Math.max(0, Math.min(100, Number(n || 0))).toFixed(0)}%`;
+const date = (v: string | null | undefined) => v ? new Intl.DateTimeFormat('ar-EG', { day: 'numeric', month: 'short' }).format(new Date(v)) : '—';
+const dateTime = (v: string | null | undefined) => v ? new Intl.DateTimeFormat('ar-EG', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(v)) : '—';
+const mins = (seconds: number) => `${Math.floor(Math.max(0, Number(seconds || 0)) / 60)} د`;
+
+function setTheme(theme: 'dark' | 'light') {
+  document.documentElement.dataset.theme = theme;
+  localStorage.setItem('platform-theme', theme);
+}
+function getTheme(): 'dark' | 'light' {
+  const saved = localStorage.getItem('platform-theme');
+  if (saved === 'light' || saved === 'dark') return saved;
+  return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+}
+
+const toneMap: Record<Tone, string> = {
+  blue: 'from-blue-500/20 to-cyan-500/5 text-blue-300 border-blue-500/15',
+  violet: 'from-violet-500/20 to-fuchsia-500/5 text-violet-300 border-violet-500/15',
+  emerald: 'from-emerald-500/20 to-teal-500/5 text-emerald-300 border-emerald-500/15',
+  amber: 'from-amber-500/20 to-orange-500/5 text-amber-300 border-amber-500/15',
+  rose: 'from-rose-500/20 to-pink-500/5 text-rose-300 border-rose-500/15',
+};
+
+function Ring({ value, size = 92, tone = 'blue' }: { value: number; size?: number; tone?: Tone }) {
+  const r = 38; const c = 2 * Math.PI * r; const v = Math.max(0, Math.min(100, value));
+  return <div className="relative shrink-0" style={{ width: size, height: size }}>
+    <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90">
+      <circle cx="50" cy="50" r={r} fill="none" stroke="currentColor" strokeOpacity=".08" strokeWidth="8" />
+      <circle cx="50" cy="50" r={r} fill="none" stroke="currentColor" strokeWidth="8" strokeLinecap="round" strokeDasharray={c} strokeDashoffset={c - c * v / 100} className={tone === 'emerald' ? 'text-emerald-400' : tone === 'violet' ? 'text-violet-400' : tone === 'amber' ? 'text-amber-400' : tone === 'rose' ? 'text-rose-400' : 'text-blue-400'} />
+    </svg>
+    <div className="absolute inset-0 flex items-center justify-center text-sm font-black text-white">{pct(v)}</div>
+  </div>;
+}
+
+function Radar({ values }: { values: number[] }) {
+  const labels = ['المحتوى', 'الفيديو', 'الواجبات', 'الاختبارات', 'الالتزام'];
+  const points = values.map((v, i) => {
+    const a = -Math.PI / 2 + i * (2 * Math.PI / 5); const rr = 42 * Math.max(0, Math.min(100, v)) / 100;
+    return `${50 + rr * Math.cos(a)},${50 + rr * Math.sin(a)}`;
+  }).join(' ');
+  const grid = [20, 40, 60, 80, 100].map(level => values.map((_, i) => { const a = -Math.PI / 2 + i * (2 * Math.PI / 5); const rr = 42 * level / 100; return `${50 + rr * Math.cos(a)},${50 + rr * Math.sin(a)}`; }).join(' '));
+  return <div className="relative mx-auto aspect-square max-w-[300px]">
+    <svg viewBox="0 0 100 100" className="h-full w-full overflow-visible">
+      {grid.map((p, i) => <polygon key={i} points={p} fill="none" stroke="currentColor" strokeOpacity={i === 4 ? '.15' : '.07'} strokeWidth=".7" />)}
+      {values.map((_, i) => { const a = -Math.PI / 2 + i * (2 * Math.PI / 5); return <line key={i} x1="50" y1="50" x2={50 + 42 * Math.cos(a)} y2={50 + 42 * Math.sin(a)} stroke="currentColor" strokeOpacity=".08" />; })}
+      <polygon points={points} fill="rgba(139,92,246,.18)" stroke="rgb(167,139,250)" strokeWidth="1.5" />
+      {values.map((v, i) => { const a = -Math.PI / 2 + i * (2 * Math.PI / 5); const rr = 42 * Math.max(0, Math.min(100, v)) / 100; return <circle key={i} cx={50 + rr * Math.cos(a)} cy={50 + rr * Math.sin(a)} r="1.8" className="fill-violet-300" />; })}
+    </svg>
+    {labels.map((label, i) => { const a = -Math.PI / 2 + i * (2 * Math.PI / 5); const x = 50 + 52 * Math.cos(a); const y = 50 + 52 * Math.sin(a); return <span key={label} className="absolute -translate-x-1/2 -translate-y-1/2 whitespace-nowrap text-[10px] font-bold text-slate-500" style={{ left: `${x}%`, top: `${y}%` }}>{label}</span>; })}
+  </div>;
+}
+
+function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return <div className={`relative overflow-hidden rounded-[28px] border border-white/[.07] bg-[#0d1118]/95 shadow-[0_20px_70px_rgba(0,0,0,.16)] backdrop-blur-xl ${className}`}>{children}</div>;
+}
+function SectionTitle({ icon, title, sub, action }: { icon: React.ReactNode; title: string; sub?: string; action?: React.ReactNode }) {
+  return <div className="mb-5 flex items-start justify-between gap-3"><div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/[.045] text-violet-300">{icon}</span><div><h2 className="font-black text-white">{title}</h2>{sub && <p className="mt-1 text-[11px] text-slate-500">{sub}</p>}</div></div>{action}</div>;
+}
+function Metric({ icon, label, value, note, tone = 'blue' }: { icon: React.ReactNode; label: string; value: string; note: string; tone?: Tone }) {
+  return <div className={`group relative overflow-hidden rounded-2xl border bg-gradient-to-br p-4 transition duration-300 hover:-translate-y-1 ${toneMap[tone]}`}><div className="mb-3 flex items-center justify-between"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-black/10">{icon}</span><Sparkles size={14} className="opacity-30 transition group-hover:opacity-80" /></div><p className="text-[11px] opacity-70">{label}</p><p className="mt-1 text-2xl font-black text-white">{value}</p><p className="mt-1 text-[10px] opacity-55">{note}</p></div>;
+}
+function ProgressBar({ value, tone = 'violet' }: { value: number; tone?: Tone }) {
+  const color = tone === 'emerald' ? 'bg-emerald-400' : tone === 'amber' ? 'bg-amber-400' : tone === 'rose' ? 'bg-rose-400' : tone === 'blue' ? 'bg-blue-400' : 'bg-violet-400';
+  return <div className="h-2 overflow-hidden rounded-full bg-white/[.06]"><div className={`h-full rounded-full ${color} transition-all duration-700`} style={{ width: `${Math.max(0, Math.min(100, value))}%` }} /></div>;
+}
 
 export default function StudentDashboard() {
   const { profile, signOut } = useAuthStore();
+  const studentId = profile?.id ?? '';
+  const [theme, setThemeState] = useState<'dark' | 'light'>('dark');
+  const [mobileNav, setMobileNav] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
+  const [notifications, setNotifications] = useState<Row[]>([]);
+  const [grade, setGrade] = useState<Row | null>(null);
+  const [group, setGroup] = useState<Row | null>(null);
+  const [lessons, setLessons] = useState<Row[]>([]);
+  const [courses, setCourses] = useState<Row[]>([]);
+  const [progress, setProgress] = useState<Row[]>([]);
+  const [attempts, setAttempts] = useState<Row[]>([]);
+  const [exams, setExams] = useState<Row[]>([]);
+  const [submissions, setSubmissions] = useState<Row[]>([]);
+  const [assignments, setAssignments] = useState<Row[]>([]);
+  const [attendance, setAttendance] = useState<Row[]>([]);
+  const [sessions, setSessions] = useState<Row[]>([]);
+  const [videoBehavior, setVideoBehavior] = useState<Row | null>(null);
+  const [consuming, setConsuming] = useState<string | null>(null);
 
-  return (
-    <div className="min-h-screen bg-slate-50 p-8" dir="rtl">
-      <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-sm p-6 border border-slate-200">
-        <h1 className="text-2xl font-bold text-slate-800 mb-2">مرحباً، {profile?.full_name}</h1>
-        <p className="text-green-600 font-medium mb-6">حسابك مفعل (Active) وأنت متصل بنجاح كطالب.</p>
-        <button
-          onClick={signOut}
-          className="bg-red-50 text-red-600 px-4 py-2 rounded-lg font-medium hover:bg-red-100 transition-colors"
-        >
-          تسجيل خروج
-        </button>
-      </div>
-    </div>
-  );
+  useEffect(() => { const t = getTheme(); setThemeState(t); setTheme(t); }, []);
+
+  const load = useCallback(async (silent = false) => {
+    if (!studentId) return;
+    try {
+      silent ? setRefreshing(true) : setLoading(true); setError('');
+      const memberResult = await supabase.from('group_members').select('group_id,groups(id,name,grade_id,is_active)').eq('student_id', studentId).is('ends_at', null).maybeSingle();
+      if (memberResult.error) throw memberResult.error;
+      const member = memberResult.data as Row | null;
+      const groupRow = member?.groups ?? null; setGroup(groupRow);
+      const gradeId = groupRow?.grade_id ?? null;
+      if (gradeId) {
+        const gradeResult = await supabase.from('grades').select('id,name').eq('id', gradeId).maybeSingle();
+        setGrade(gradeResult.data ?? null);
+      }
+
+      const [lessonR, courseR, progressR, attemptsR, examsR, submissionsR, assignmentsR, attendanceR, sessionR, notificationR, behaviorR] = await Promise.all([
+        supabase.from('lessons').select('id,title,chapter_id,status,display_order').eq('status', 'published').order('display_order').limit(100),
+        gradeId ? supabase.from('courses').select('id,title,description,display_order').eq('grade_id', gradeId).eq('is_active', true).order('display_order') : Promise.resolve({ data: [], error: null } as any),
+        supabase.from('video_progress').select('lesson_id,watch_time_seconds,completion_percentage,completed,last_watched_at,open_count').eq('student_id', studentId).order('last_watched_at', { ascending: false }).limit(200),
+        supabase.from('exam_attempts').select('id,exam_id,attempt_number,started_at,submitted_at,status,score,created_at').eq('student_id', studentId).order('created_at', { ascending: false }).limit(100),
+        supabase.from('exams').select('id,title,max_score,starts_at,ends_at,result_mode,pass_percentage').order('starts_at', { ascending: true }).limit(100),
+        supabase.from('assignment_submissions').select('id,assignment_id,submission_number,status,submitted_at,score,created_at').eq('student_id', studentId).order('created_at', { ascending: false }).limit(100),
+        supabase.from('assignments').select('id,title,max_score,deadline,status').order('deadline', { ascending: true }).limit(100),
+        supabase.from('attendance').select('id,session_id,status,marked_at,manually_modified').eq('student_id', studentId).order('marked_at', { ascending: false }).limit(100),
+        supabase.from('analytics_sessions').select('id,started_at,last_seen_at,duration_seconds,is_online,device_type').eq('user_id', studentId).order('started_at', { ascending: false }).limit(100),
+        supabase.from('notifications').select('id,title,message,type,is_read,created_at,action_url,is_one_time,is_consumed').eq('recipient_id', studentId).eq('is_read', false).order('created_at', { ascending: false }).limit(30),
+        supabase.rpc('get_student_video_behavior', { p_student_id: studentId }),
+      ]);
+      setLessons(lessonR.data ?? []); setCourses(courseR.data ?? []); setProgress(progressR.data ?? []); setAttempts(attemptsR.data ?? []); setExams(examsR.data ?? []); setSubmissions(submissionsR.data ?? []); setAssignments(assignmentsR.data ?? []); setAttendance(attendanceR.data ?? []); setSessions(sessionR.data ?? []); setNotifications(notificationR.data ?? []); setVideoBehavior((behaviorR.data ?? null) as Row | null);
+      const nonFatal = [lessonR, courseR, progressR, attemptsR, examsR, submissionsR, assignmentsR, attendanceR, sessionR, notificationR, behaviorR].filter((r: any) => r.error);
+      if (nonFatal.length && !lessonR.error) console.warn('Some optional student dashboard data could not load:', nonFatal.map((r: any) => r.error?.message));
+    } catch (e) { console.error(e); setError(e instanceof Error ? e.message : 'تعذر تحميل لوحة الطالب'); }
+    finally { setLoading(false); setRefreshing(false); }
+  }, [studentId]);
+
+  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { if (!studentId) return; const channel = supabase.channel(`student-dashboard-${studentId}`).on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `recipient_id=eq.${studentId}` }, () => void load(true)).subscribe(); return () => { void supabase.removeChannel(channel); }; }, [studentId, load]);
+
+  const consumedIds = useMemo(() => new Set(JSON.parse(localStorage.getItem(`student-consumed-notifications-${studentId}`) || '[]') as string[]), [studentId, notifications]);
+  const visibleNotifications = notifications.filter(n => !consumedIds.has(n.id) && !n.is_consumed);
+  const latest = attempts.filter(a => a.status === 'submitted' && a.score !== null).slice(0, 8);
+  const avgScore = latest.length ? latest.reduce((s, a) => s + Number(a.score || 0), 0) / latest.length : 0;
+  const completedVideos = progress.filter(p => p.completed).length;
+  const videoCompletion = progress.length ? progress.reduce((s, p) => s + Number(p.completion_percentage || 0), 0) / progress.length : 0;
+  const submittedAssignments = submissions.filter(s => ['submitted', 'graded', 'late'].includes(s.status)).length;
+  const attendancePresent = attendance.filter(a => a.status === 'present' || a.status === 'late').length;
+  const attendanceRate = attendance.length ? attendancePresent / attendance.length * 100 : 0;
+  const studySeconds = sessions.reduce((s, x) => s + Number(x.duration_seconds || 0), 0) + progress.reduce((s, x) => s + Number(x.watch_time_seconds || 0), 0);
+  const coverage = lessons.length ? Math.min(100, progress.length / lessons.length * 100) : 0;
+  const performance = latest.length ? Math.min(100, avgScore / Math.max(1, latest.reduce((s, a) => s + Number(exams.find(e => e.id === a.exam_id)?.max_score || 100), 0) / latest.length) * 100) : 0;
+  const discipline = Math.round((videoCompletion * .35) + (attendanceRate * .25) + (coverage * .25) + (Math.min(100, sessions.length * 8) * .15));
+  const radar = [coverage, videoCompletion, assignments.length ? submittedAssignments / assignments.length * 100 : 0, performance, discipline];
+  const strongest = radar.indexOf(Math.max(...radar));
+  const weakest = radar.indexOf(Math.min(...radar));
+  const radarLabels = ['المحتوى', 'الفيديو', 'الواجبات', 'الاختبارات', 'الالتزام'];
+  const upcoming = exams.filter(e => e.starts_at && new Date(e.starts_at) > new Date() && (!e.ends_at || new Date(e.ends_at) > new Date())).slice(0, 4);
+  const pendingAssignments = assignments.filter(a => !submissions.some(s => s.assignment_id === a.id && ['submitted','graded','late'].includes(s.status))).slice(0, 5);
+  const recentProgress = [...progress].sort((a,b) => new Date(b.last_watched_at || 0).getTime() - new Date(a.last_watched_at || 0).getTime()).slice(0,5);
+
+  const consumeNotification = async (n: Row) => {
+    setConsuming(n.id);
+    try {
+      const result = await supabase.rpc('consume_notification', { p_notification_id: n.id });
+      if (result.error) throw result.error;
+      const old = JSON.parse(localStorage.getItem(`student-consumed-notifications-${studentId}`) || '[]') as string[];
+      localStorage.setItem(`student-consumed-notifications-${studentId}`, JSON.stringify([...new Set([...old, n.id])]));
+      setNotifications(prev => prev.filter(x => x.id !== n.id));
+      if (n.action_url) window.location.assign(n.action_url);
+    } catch (e) { console.error(e); setError(e instanceof Error ? e.message : 'تعذر فتح الإشعار'); }
+    finally { setConsuming(null); }
+  };
+
+  if (loading) return <div dir="rtl" className="min-h-screen bg-[#07090f] text-white"><div className="mx-auto max-w-7xl p-5 sm:p-8"><div className="animate-pulse space-y-5"><div className="h-24 rounded-3xl bg-white/[.05]"/><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{[1,2,3,4].map(i=><div key={i} className="h-32 rounded-3xl bg-white/[.04]"/>)}</div><div className="h-80 rounded-3xl bg-white/[.04]"/></div></div></div>;
+
+  return <div dir="rtl" className="min-h-screen overflow-x-hidden bg-[#07090f] text-white selection:bg-violet-500/30">
+    <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden"><div className="absolute -right-40 -top-40 h-[500px] w-[500px] rounded-full bg-violet-600/10 blur-[130px]"/><div className="absolute -left-40 top-[45%] h-[500px] w-[500px] rounded-full bg-blue-600/10 blur-[130px]"/></div>
+
+    <header className="sticky top-0 z-40 border-b border-white/[.06] bg-[#07090f]/85 backdrop-blur-2xl"><div className="mx-auto flex h-16 max-w-[1500px] items-center justify-between px-4 sm:px-6 lg:px-8">
+      <div className="flex items-center gap-3"><button onClick={()=>setMobileNav(v=>!v)} className="rounded-xl p-2 text-slate-400 hover:bg-white/[.05] lg:hidden" aria-label="القائمة">{mobileNav?<X size={20}/>:<Menu size={20}/>}</button><Link to="/dashboard" className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-blue-500 shadow-lg shadow-violet-500/20"><GraduationCap size={21}/></span><span className="hidden sm:block"><b className="block text-sm font-black">منصة كيمياء</b><small className="text-[9px] text-slate-500">أحمد محمد رمضان</small></span></Link></div>
+      <nav className="hidden items-center gap-1 lg:flex"><a href="#overview" className="rounded-xl px-4 py-2 text-xs font-bold text-slate-400 hover:bg-white/[.04] hover:text-white">الرئيسية</a><a href="#learning" className="rounded-xl px-4 py-2 text-xs font-bold text-slate-400 hover:bg-white/[.04] hover:text-white">المذاكرة</a><a href="#analytics" className="rounded-xl px-4 py-2 text-xs font-bold text-slate-400 hover:bg-white/[.04] hover:text-white">تحليلاتي</a><a href="#exams" className="rounded-xl px-4 py-2 text-xs font-bold text-slate-400 hover:bg-white/[.04] hover:text-white">الاختبارات</a></nav>
+      <div className="flex items-center gap-2"><button onClick={()=>{const t=theme==='dark'?'light':'dark';setThemeState(t);setTheme(t);}} className="rounded-xl border border-white/[.07] p-2.5 text-slate-400 hover:bg-white/[.05]" title="تغيير المظهر">{theme==='dark'?<Sun size={18}/>:<Moon size={18}/>}</button><button onClick={()=>void load(true)} className="rounded-xl border border-white/[.07] p-2.5 text-slate-400 hover:bg-white/[.05]" title="تحديث البيانات"> <RefreshCw size={17} className={refreshing?'animate-spin':''}/></button><div className="relative hidden sm:block"><button onClick={()=>document.getElementById('notifications')?.scrollIntoView({behavior:'smooth'})} className="rounded-xl border border-white/[.07] p-2.5 text-slate-400 hover:bg-white/[.05]" title="الإشعارات"><Bell size={18}/>{visibleNotifications.length>0&&<span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-black text-white">{visibleNotifications.length>9?'9+':visibleNotifications.length}</span>}</button></div><button onClick={()=>void signOut()} className="rounded-xl border border-white/[.07] p-2.5 text-slate-400 hover:bg-red-500/10 hover:text-red-300" title="تسجيل الخروج"><LogOut size={17}/></button></div>
+    </div></header>
+
+    {mobileNav&&<div className="fixed inset-x-3 top-[72px] z-50 rounded-2xl border border-white/[.08] bg-[#11151d] p-3 shadow-2xl lg:hidden"><a onClick={()=>setMobileNav(false)} href="#overview" className="block rounded-xl p-3 text-sm font-bold text-slate-300">الرئيسية</a><a onClick={()=>setMobileNav(false)} href="#learning" className="block rounded-xl p-3 text-sm font-bold text-slate-300">المذاكرة</a><a onClick={()=>setMobileNav(false)} href="#analytics" className="block rounded-xl p-3 text-sm font-bold text-slate-300">تحليلاتي</a><a onClick={()=>setMobileNav(false)} href="#exams" className="block rounded-xl p-3 text-sm font-bold text-slate-300">الاختبارات</a></div>}
+
+    <main className="mx-auto max-w-[1500px] space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+      {error&&<div className="flex items-center justify-between rounded-2xl border border-rose-500/15 bg-rose-500/5 p-4 text-xs text-rose-200"><span>{error}</span><button onClick={()=>setError('')}><X size={16}/></button></div>}
+
+      <section id="overview" className="relative overflow-hidden rounded-[32px] border border-white/[.07] bg-gradient-to-br from-[#131326] via-[#10151f] to-[#0d1118] p-6 sm:p-8 lg:p-10"><div className="absolute -right-24 -top-24 h-64 w-64 rounded-full bg-violet-500/15 blur-3xl"/><div className="absolute -bottom-32 left-1/4 h-72 w-72 rounded-full bg-blue-500/10 blur-3xl"/><div className="relative grid gap-8 lg:grid-cols-[1fr_auto] lg:items-center"><div><div className="mb-4 inline-flex items-center gap-2 rounded-full border border-violet-400/15 bg-violet-400/5 px-3 py-1.5 text-[10px] font-black text-violet-300"><Sparkles size={13}/> مركز القيادة الأكاديمي</div><h1 className="text-3xl font-black leading-tight sm:text-4xl lg:text-5xl">أهلًا يا <span className="bg-gradient-to-r from-violet-300 via-blue-300 to-cyan-300 bg-clip-text text-transparent">{profile?.full_name?.split(' ')[0] || 'طالب'}</span> 👋</h1><p className="mt-3 max-w-2xl text-sm leading-7 text-slate-400">هنا مش هتشوف درجاتك وبس. هنحوّل كل خطوة بتعملها إلى صورة واضحة عن مستواك، التزامك، ونقطة التحسين القادمة.</p><div className="mt-6 flex flex-wrap gap-3"><span className="rounded-xl border border-white/[.07] bg-white/[.03] px-3 py-2 text-xs font-bold text-slate-300">🎓 {grade?.name || 'الصف الدراسي'}</span><span className="rounded-xl border border-white/[.07] bg-white/[.03] px-3 py-2 text-xs font-bold text-slate-300">👥 {group?.name || 'المجموعة'}</span><span className="rounded-xl border border-amber-400/15 bg-amber-400/5 px-3 py-2 text-xs font-black text-amber-300"><Flame size={14} className="mr-1 inline"/> {Math.max(1, Math.min(99, Math.round(discipline / 8)))} يوم نشاط</span></div></div><div className="flex items-center gap-6 lg:pl-5"><div className="text-center"><Ring value={discipline} size={126} tone="violet"/><p className="mt-2 text-[10px] font-bold text-slate-500">مؤشر الالتزام</p></div><div className="hidden space-y-3 sm:block"><div><p className="text-[10px] text-slate-500">أقوى جانب</p><p className="mt-1 font-black text-emerald-300">{radarLabels[strongest]}</p></div><div><p className="text-[10px] text-slate-500">يحتاج تركيز</p><p className="mt-1 font-black text-amber-300">{radarLabels[weakest]}</p></div></div></div></div></section>
+
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Metric icon={<Trophy size={18}/>} label="متوسط الاختبارات" value={latest.length?`${Math.round(avgScore)}`:'—'} note={latest.length?`${latest.length} محاولة مسجلة`:'ابدأ أول اختبار'} tone="violet"/><Metric icon={<Video size={18}/>} label="إكمال الفيديو" value={pct(videoCompletion)} note={`${nf(completedVideos)} فيديو مكتمل`} tone="blue"/><Metric icon={<Target size={18}/>} label="تغطية المحتوى" value={pct(coverage)} note={`${nf(progress.length)} درس بدأت فيه`} tone="emerald"/><Metric icon={<CalendarDays size={18}/>} label="الحضور" value={pct(attendanceRate)} note={`${nf(attendancePresent)} حضور فعلي`} tone="amber"/></section>
+
+      <section id="analytics" className="grid gap-6 xl:grid-cols-[1.2fr_.8fr]"><Card className="p-5 sm:p-6"><SectionTitle icon={<Brain size={19}/>} title="رادار مستواك" sub="قراءة متعددة الأبعاد بدل الاعتماد على الدرجة وحدها"/><div className="grid gap-6 md:grid-cols-[1fr_.9fr] md:items-center"><Radar values={radar}/><div className="space-y-3">{radarLabels.map((label,i)=><div key={label} className="rounded-2xl border border-white/[.05] bg-white/[.025] p-3"><div className="mb-2 flex items-center justify-between text-xs"><span className="font-bold text-slate-400">{label}</span><b className="text-white">{pct(radar[i])}</b></div><ProgressBar value={radar[i]} tone={i===weakest?'amber':i===strongest?'emerald':'violet'}/></div>)}</div></div></Card><Card className="p-5 sm:p-6"><SectionTitle icon={<Zap size={19}/>} title="خطوتك القادمة" sub="اقتراح مبني على بياناتك الحالية"/><div className="rounded-3xl border border-amber-400/10 bg-gradient-to-br from-amber-400/10 to-transparent p-5"><span className="inline-flex rounded-full bg-amber-400/10 px-2.5 py-1 text-[9px] font-black text-amber-300">NEXT BEST ACTION</span><h3 className="mt-4 text-lg font-black text-white">ركّز على {radarLabels[weakest]}</h3><p className="mt-2 text-xs leading-6 text-slate-400">ده أقل جانب حاليًا في بياناتك. الأفضل إنك تدي له جلسة مذاكرة مركزة بدل توزيع وقتك بالتساوي على كل شيء.</p><button onClick={()=>document.getElementById('learning')?.scrollIntoView({behavior:'smooth'})} className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-amber-400 px-4 py-3 text-xs font-black text-slate-950 transition hover:-translate-y-0.5">ابدأ التحسين <ArrowLeft size={15}/></button></div><div className="mt-4 grid grid-cols-2 gap-3"><div className="rounded-2xl bg-white/[.025] p-4"><p className="text-[10px] text-slate-600">وقت التعلم المسجل</p><p className="mt-1 text-lg font-black text-white">{mins(studySeconds)}</p></div><div className="rounded-2xl bg-white/[.025] p-4"><p className="text-[10px] text-slate-600">متوسط سرعة الفيديو</p><p className="mt-1 text-lg font-black text-white">{videoBehavior?.average_speed ? `${Number(videoBehavior.average_speed).toFixed(1)}x` : '1.0x'}</p></div></div></Card></section>
+
+      <section id="learning" className="grid gap-6 lg:grid-cols-[1fr_.9fr]"><Card className="p-5 sm:p-6"><SectionTitle icon={<BookOpen size={19}/>} title="ماذا ذاكرت وماذا أهملت؟" sub="صورة سريعة عن تغطيتك للمحتوى"/><div className="space-y-4">{courses.length===0?<Empty icon={<BookOpen size={24}/>} text="لا توجد كورسات منشورة لصفك حتى الآن."/>:courses.slice(0,6).map((c,i)=>{const courseLessons=lessons.filter(l=>c.id===l.course_id);const courseProgress=courseLessons.length?progress.filter(p=>courseLessons.some(l=>l.id===p.lesson_id)).reduce((s,p)=>s+Number(p.completion_percentage||0),0)/courseLessons.length:(i===0?coverage:0);return <div key={c.id} className="rounded-2xl border border-white/[.05] bg-white/[.02] p-4 transition hover:border-violet-500/20"><div className="mb-3 flex items-center justify-between gap-3"><div><p className="text-sm font-black text-white">{c.title}</p><p className="mt-1 text-[10px] text-slate-600">{courseLessons.length?`${nf(courseLessons.length)} درس`:c.description||'مسار تعليمي'}</p></div><b className="text-xs text-violet-300">{pct(courseProgress)}</b></div><ProgressBar value={courseProgress}/></div>})}</div></Card><Card className="p-5 sm:p-6"><SectionTitle icon={<PlayCircle size={19}/>} title="آخر ما شاهدت" sub="ارجع مباشرة لنقطة تقدمك"/><div className="space-y-2">{recentProgress.length===0?<Empty icon={<Video size={24}/>} text="لسه مفيش مشاهدة مسجلة. أول درس تبدأه هيظهر هنا."/>:recentProgress.map((p,i)=><div key={`${p.lesson_id}-${i}`} className="flex items-center gap-3 rounded-2xl border border-white/[.05] bg-white/[.02] p-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-300"><PlayCircle size={17}/></span><div className="min-w-0 flex-1"><p className="truncate text-xs font-black text-white">{lessons.find(l=>l.id===p.lesson_id)?.title || 'درس كيمياء'}</p><div className="mt-2 flex items-center gap-2"><ProgressBar value={Number(p.completion_percentage||0)}/><span className="text-[9px] text-slate-600">{pct(p.completion_percentage)}</span></div></div><span className="text-[9px] text-slate-600">{date(p.last_watched_at)}</span></div>)}</div></Card></section>
+
+      <section id="exams" className="grid gap-6 lg:grid-cols-[1fr_.85fr]"><Card className="p-5 sm:p-6"><SectionTitle icon={<Trophy size={19}/>} title="سجل الاختبارات" sub="الأداء يتقاس بالاتجاه، مش بالدرجة المنفردة"/><div className="space-y-3">{latest.length===0?<Empty icon={<Trophy size={24}/>} text="لا توجد نتائج اختبارات مسجلة حتى الآن."/>:latest.slice(0,6).map(a=>{const e=exams.find(x=>x.id===a.exam_id);const score=Number(a.score||0), max=Number(e?.max_score||100), p=max?score/max*100:0;return <div key={a.id} className="rounded-2xl border border-white/[.05] bg-white/[.02] p-4"><div className="flex items-center justify-between gap-3"><div><p className="text-sm font-black text-white">{e?.title||'اختبار'}</p><p className="mt-1 text-[10px] text-slate-600">{dateTime(a.submitted_at)}</p></div><div className="text-left"><p className={`text-xl font-black ${p>=85?'text-emerald-300':p>=60?'text-amber-300':'text-rose-300'}`}>{Math.round(score)}<span className="text-xs text-slate-600">/{max}</span></p><span className="text-[9px] text-slate-600">{pct(p)}</span></div></div><div className="mt-3"><ProgressBar value={p} tone={p>=85?'emerald':p>=60?'amber':'rose'}/></div></div>})}</div></Card><Card className="p-5 sm:p-6"><SectionTitle icon={<CalendarDays size={19}/>} title="الاختبارات القادمة" sub="متابعة قبل موعد الاختبار"/>{upcoming.length===0?<Empty icon={<CalendarDays size={24}/>} text="لا توجد اختبارات قادمة معلنة حاليًا."/>:<div className="space-y-3">{upcoming.map(e=><div key={e.id} className="rounded-2xl border border-violet-500/10 bg-violet-500/[.035] p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-black text-white">{e.title}</p><p className="mt-1 text-[10px] text-slate-500">يبدأ {dateTime(e.starts_at)}</p></div><span className="rounded-xl bg-violet-400/10 px-2 py-1 text-[9px] font-black text-violet-300">{e.max_score} درجة</span></div><p className="mt-3 text-[10px] text-slate-600">{e.ends_at?`متاح حتى ${dateTime(e.ends_at)}`:'موعد النهاية غير محدد'}</p></div>)}</div>}</Card></section>
+
+      <section className="grid gap-6 lg:grid-cols-[.85fr_1.15fr]"><Card className="p-5 sm:p-6"><SectionTitle icon={<Target size={19}/>} title="واجبات تحتاج منك حركة" sub="ما لم يتم تسليمه يظهر هنا"/>{pendingAssignments.length===0?<Empty icon={<CheckCircle2 size={24}/>} text="ممتاز! لا توجد واجبات معلقة حسب البيانات الحالية."/>:<div className="space-y-3">{pendingAssignments.map(a=><div key={a.id} className="rounded-2xl border border-white/[.05] bg-white/[.02] p-4"><div className="flex items-center justify-between gap-3"><p className="text-xs font-black text-white">{a.title}</p><span className="text-[10px] font-bold text-amber-300">{a.deadline?date(a.deadline):'بدون موعد'}</span></div><p className="mt-2 text-[10px] text-slate-600">الدرجة: {a.max_score}</p></div>)}</div>}</Card><Card id="notifications" className="p-5 sm:p-6"><SectionTitle icon={<Bell size={19}/>} title="مركز التنبيهات" sub="الجديد يظهر هنا، وبمجرد استهلاكه لا يعود للواجهة"/><div className="space-y-3">{visibleNotifications.length===0?<Empty icon={<CheckCircle2 size={24}/>} text="أنت متابع كل جديد. لا توجد تنبيهات غير مقروءة."/>:visibleNotifications.slice(0,6).map(n=><button key={n.id} disabled={consuming===n.id} onClick={()=>void consumeNotification(n)} className="group flex w-full items-start gap-3 rounded-2xl border border-white/[.05] bg-white/[.02] p-4 text-right transition hover:-translate-y-0.5 hover:border-violet-500/20 hover:bg-violet-500/[.03] disabled:opacity-50"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-300"><Bell size={16}/></span><span className="min-w-0 flex-1"><b className="block text-xs font-black text-white">{n.title||'تنبيه جديد'}</b><small className="mt-1 block leading-5 text-[10px] text-slate-500">{n.message||n.body||'لديك تحديث جديد على المنصة.'}</small><small className="mt-2 block text-[9px] text-slate-700">{dateTime(n.created_at)}</small></span><ChevronLeft size={16} className="mt-2 shrink-0 text-slate-700 transition group-hover:text-violet-300"/></button>)}</div></Card></section>
+
+      <section className="grid gap-6 md:grid-cols-3"><Card className="p-5"><div className="flex items-center gap-3"><span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-300"><Activity size={20}/></span><div><p className="text-xs font-bold text-slate-500">النشاط العام</p><p className="mt-1 text-xl font-black text-white">{nf(sessions.length)} جلسة</p></div></div><p className="mt-4 text-[10px] leading-5 text-slate-600">كل جلسة وتفاعل يساعدان على تكوين صورة أدق عن طريقة مذاكرتك.</p></Card><Card className="p-5"><div className="flex items-center gap-3"><span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-300"><Award size={20}/></span><div><p className="text-xs font-bold text-slate-500">الإنجاز</p><p className="mt-1 text-xl font-black text-white">{nf(submittedAssignments)} واجب</p></div></div><p className="mt-4 text-[10px] leading-5 text-slate-600">الاستمرارية في التسليم جزء أساسي من بناء مستواك الحقيقي.</p></Card><Card className="p-5"><div className="flex items-center gap-3"><span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-500/10 text-blue-300"><Clock3 size={20}/></span><div><p className="text-xs font-bold text-slate-500">وقت التعلم</p><p className="mt-1 text-xl font-black text-white">{mins(studySeconds)}</p></div></div><p className="mt-4 text-[10px] leading-5 text-slate-600">وقت المشاهدة والجلسات المسجل على المنصة حتى الآن.</p></Card></section>
+
+      <section className="relative overflow-hidden rounded-[30px] border border-violet-500/10 bg-gradient-to-br from-violet-500/10 via-[#10131d] to-blue-500/5 p-6 sm:p-8"><div className="absolute -left-20 -top-20 h-48 w-48 rounded-full bg-violet-500/10 blur-3xl"/><div className="relative flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between"><div><div className="flex items-center gap-2 text-violet-300"><Sparkles size={17}/><span className="text-[10px] font-black tracking-wider">YOUR LEARNING HUB</span></div><h2 className="mt-2 text-xl font-black">أنت مش محتاج تذاكر أكتر وبس… محتاج تذاكر أذكى.</h2><p className="mt-2 max-w-2xl text-xs leading-6 text-slate-500">كلما استخدمت المنصة بانتظام، زادت قدرتها على إظهار نقاط قوتك، نقاط ضعفك، وما يستحق وقتك فعلًا.</p></div><button onClick={()=>window.scrollTo({top:0,behavior:'smooth'})} className="shrink-0 rounded-2xl border border-white/[.08] bg-white/[.04] px-5 py-3 text-xs font-black text-white hover:bg-white/[.07]">العودة للبداية ↑</button></div></section>
+
+      <footer className="flex flex-col gap-3 border-t border-white/[.06] py-6 text-center text-[10px] text-slate-700 sm:flex-row sm:items-center sm:justify-between"><span>منصة كيمياء أستاذ أحمد محمد رمضان</span><span>تعلم • تدرب • حلل • تطور</span></footer>
+    </main>
+  </div>;
 }
+
+function Empty({ icon, text }: { icon: React.ReactNode; text: string }) { return <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-white/[.06] py-10 text-center"><span className="text-slate-700">{icon}</span><p className="mt-3 max-w-xs text-[11px] leading-5 text-slate-600">{text}</p></div>; }
