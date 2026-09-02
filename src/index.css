@@ -6,6 +6,7 @@
   font-family: 'Cairo', sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
+  color-scheme: dark;
 }
 
 * {
@@ -16,6 +17,7 @@ html {
   min-width: 320px;
   min-height: 100%;
   background: #07090f;
+  color-scheme: dark;
 }
 
 body {
@@ -31,6 +33,23 @@ input,
 textarea,
 select {
   font: inherit;
+}
+
+select {
+  color-scheme: dark;
+  background-color: #11151d;
+  color: #ffffff;
+}
+
+select option,
+select optgroup {
+  background-color: #11151d;
+  color: #ffffff;
+}
+
+select option:checked {
+  background-color: #1e293b;
+  color: #ffffff;
 }
 
 button {
