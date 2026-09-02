@@ -28,7 +28,7 @@ where ends_at is null;
 alter table public.groups enable row level security;
 alter table public.group_members enable row level security;
 
- drop policy if exists groups_admin_all on public.groups;
+drop policy if exists groups_admin_all on public.groups;
 create policy groups_admin_all
 on public.groups
 for all
@@ -36,7 +36,7 @@ to authenticated
 using (public.is_active_admin())
 with check (public.is_active_admin());
 
- drop policy if exists groups_student_read_current on public.groups;
+drop policy if exists groups_student_read_current on public.groups;
 create policy groups_student_read_current
 on public.groups
 for select
@@ -51,15 +51,43 @@ using (
     )
 );
 
- drop policy if exists group_members_admin_all on public.group_members;
-create policy group_members_admin_all
+-- Admin reads only current memberships through the table.
+-- Historical memberships remain stored in the database and are handled by RPCs.
+drop policy if exists group_members_admin_all on public.group_members;
+drop policy if exists group_members_admin_select_current on public.group_members;
+drop policy if exists group_members_admin_insert on public.group_members;
+drop policy if exists group_members_admin_update on public.group_members;
+drop policy if exists group_members_admin_delete on public.group_members;
+
+create policy group_members_admin_select_current
 on public.group_members
-for all
+for select
+to authenticated
+using (
+    public.is_active_admin()
+    and ends_at is null
+);
+
+create policy group_members_admin_insert
+on public.group_members
+for insert
+to authenticated
+with check (public.is_active_admin());
+
+create policy group_members_admin_update
+on public.group_members
+for update
 to authenticated
 using (public.is_active_admin())
 with check (public.is_active_admin());
 
- drop policy if exists group_members_student_read_current on public.group_members;
+create policy group_members_admin_delete
+on public.group_members
+for delete
+to authenticated
+using (public.is_active_admin());
+
+drop policy if exists group_members_student_read_current on public.group_members;
 create policy group_members_student_read_current
 on public.group_members
 for select
@@ -266,7 +294,7 @@ grant execute on function public.delete_group(uuid) to authenticated;
 -- UPDATED_AT TRIGGER
 -- ============================================================
 
- drop trigger if exists groups_set_updated_at on public.groups;
+drop trigger if exists groups_set_updated_at on public.groups;
 create trigger groups_set_updated_at
 before update on public.groups
 for each row
