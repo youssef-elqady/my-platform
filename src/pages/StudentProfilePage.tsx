@@ -19,7 +19,6 @@ import { supabase } from '../lib/supabase';
 
 type StudentStatus =
   | 'pending'
-  | 'approved'
   | 'active'
   | 'suspended'
   | 'rejected';
@@ -36,16 +35,14 @@ interface Profile {
 }
 
 interface StudentProfile {
-  user_id: string;
+  id: string;
   status: StudentStatus;
-  registration_note: string | null;
-  approved_at: string | null;
-  suspended_at: string | null;
   created_at: string;
   updated_at: string;
   student_code: string | null;
-  parent_phone: string | null;
+  is_active: boolean;
 }
+
 
 interface Grade {
   id: string;
@@ -97,9 +94,50 @@ interface VideoWatch {
   last_watched_at: string;
 }
 
-interface Lesson {
+
+interface ExamAttempt {
+  id: string;
+  exam_id: string;
+  attempt_number: number;
+  started_at: string | null;
+  submitted_at: string | null;
+  status: string;
+  score: number | null;
+  created_at: string;
+}
+
+interface Exam {
   id: string;
   title: string;
+  max_score: number;
+  starts_at: string | null;
+  ends_at: string | null;
+}
+
+interface AttendanceRecord {
+  id: string;
+  session_id: string;
+  student_id: string;
+  status: string;
+  marked_at: string;
+  manually_modified: boolean;
+}
+
+interface AssignmentSubmission {
+  id: string;
+  assignment_id: string;
+  submission_number: number;
+  status: string;
+  submitted_at: string | null;
+  score: number | null;
+  created_at: string;
+}
+
+interface Assignment {
+  id: string;
+  title: string;
+  max_score: number;
+  deadline: string | null;
 }
 
 /* =========================================================
@@ -181,13 +219,6 @@ function getStatusConfig(
           'border-emerald-500/20 bg-emerald-500/10 text-emerald-400',
       };
 
-    case 'approved':
-      return {
-        label: 'معتمد',
-        className:
-          'border-blue-500/20 bg-blue-500/10 text-blue-400',
-      };
-
     case 'pending':
       return {
         label: 'قيد المراجعة',
@@ -251,6 +282,7 @@ function getEventLabel(
     eventType
   );
 }
+
 
 /* =========================================================
    SMALL COMPONENTS
@@ -384,13 +416,6 @@ export default function StudentProfilePage() {
   >([]);
 
   const [
-    lessons,
-    setLessons,
-  ] = useState<
-    Lesson[]
-  >([]);
-
-  const [
     loading,
     setLoading,
   ] = useState(true);
@@ -407,457 +432,942 @@ export default function StudentProfilePage() {
     setRefreshing,
   ] = useState(false);
 
+
+  const [
+    examAttempts,
+    setExamAttempts,
+  ] = useState<ExamAttempt[]>([]);
+
+  const [
+    exams,
+    setExams,
+  ] = useState<Exam[]>([]);
+
+  const [
+    attendanceRecords,
+    setAttendanceRecords,
+  ] = useState<AttendanceRecord[]>([]);
+
+  const [
+    assignmentSubmissions,
+    setAssignmentSubmissions,
+  ] = useState<AssignmentSubmission[]>([]);
+
+  const [
+    assignments,
+    setAssignments,
+  ] = useState<Assignment[]>([]);
+
+
+
   /* =======================================================
      LOAD PROFILE
   ======================================================= */
 
-  const loadStudent =
-    useCallback(
-      async (
-        silent = false
-      ) => {
-        if (!studentId) {
-          setError(
-            'معرّف الطالب غير موجود'
-          );
-          setLoading(false);
-          return;
+    const loadStudent = useCallback(
+    async (silent = false) => {
+      if (!studentId) {
+        setError('معرّف الطالب غير موجود');
+        setLoading(false);
+        return;
+      }
+
+      try {
+        if (silent) {
+          setRefreshing(true);
+        } else {
+          setLoading(true);
         }
 
-        try {
-          if (silent) {
-            setRefreshing(true);
-          } else {
-            setLoading(true);
-          }
+        setError(null);
 
-          setError(null);
+        /* =================================================
+           1. PROFILE
+        ================================================= */
 
-          /* -----------------------------------------------
-             PROFILE
-          ------------------------------------------------ */
+        const { data: profileData, error: profileError } =
+          await supabase
+            .from('users')
+            .select(`
+              id,
+              full_name,
+              phone,
+              role,
+              avatar_url,
+              is_active,
+              status,
+              student_code,
+              created_at,
+              updated_at
+            `)
+            .eq('id', studentId)
+            .maybeSingle();
 
-          const {
-            data: profileData,
-            error: profileError,
-          } =
+        if (profileError) throw profileError;
+
+        if (!profileData) {
+          throw new Error('الطالب غير موجود');
+        }
+
+        setProfile(profileData as Profile);
+
+        /* =================================================
+           2. STUDENT PROFILE
+        ================================================= */
+
+        setStudentProfile({
+          id: profileData.id,
+          status: profileData.status as StudentStatus,
+          created_at: profileData.created_at,
+          updated_at: profileData.updated_at,
+          student_code: profileData.student_code,
+          is_active: profileData.is_active,
+        });
+
+        /* =================================================
+           3. ACTIVE GROUP
+        ================================================= */
+
+        const { data: memberData, error: memberError } =
+          await supabase
+            .from('group_members')
+            .select(`
+              id,
+              group_id,
+              starts_at,
+              ends_at
+            `)
+            .eq('student_id', studentId)
+            .is('ends_at', null)
+            .order('starts_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+        if (memberError) throw memberError;
+
+        if (memberData?.group_id) {
+          const { data: groupData, error: groupError } =
             await supabase
-              .from('profiles')
-              .select(
-                `
-                  id,
-                  full_name,
-                  phone,
-                  role,
-                  avatar_url,
-                  is_active,
-                  created_at,
-                  updated_at
-                `
-              )
-              .eq(
-                'id',
-                studentId
-              )
-              .eq(
-                'role',
-                'student'
-              )
+              .from('groups')
+              .select(`
+                id,
+                name,
+                location,
+                description,
+                is_active,
+                grade_id
+              `)
+              .eq('id', memberData.group_id)
               .maybeSingle();
 
-          if (profileError) {
-            throw profileError;
-          }
+          if (groupError) throw groupError;
 
-          if (!profileData) {
-            throw new Error(
-              'الطالب غير موجود'
-            );
-          }
-
-          setProfile(
-            profileData as Profile
-          );
-
-          /* -----------------------------------------------
-             STUDENT PROFILE
-          ------------------------------------------------ */
-
-          const {
-            data:
-              studentData,
-            error:
-              studentError,
-          } =
-            await supabase
-              .from(
-                'student_profiles'
-              )
-              .select(
-                `
-                  user_id,
-                  status,
-                  registration_note,
-                  approved_at,
-                  suspended_at,
-                  created_at,
-                  updated_at,
-                  student_code,
-                  parent_phone
-                `
-              )
-              .eq(
-                'user_id',
-                studentId
-              )
-              .maybeSingle();
-
-          if (studentError) {
-            throw studentError;
-          }
-
-          setStudentProfile(
-            studentData as StudentProfile | null
-          );
-
-          /* -----------------------------------------------
-             ACTIVE GROUP
-          ------------------------------------------------ */
-
-          const {
-            data:
-              memberData,
-            error:
-              memberError,
-          } =
-            await supabase
-              .from(
-                'group_members'
-              )
-              .select(
-                `
-                  id,
-                  group_id,
-                  starts_at,
-                  ends_at
-                `
-              )
-              .eq(
-                'student_id',
-                studentId
-              )
-              .is(
-                'ends_at',
-                null
-              )
-              .maybeSingle();
-
-          if (memberError) {
-            throw memberError;
-          }
-
-          if (
-            memberData?.group_id
-          ) {
-            const {
-              data:
-                groupData,
-              error:
-                groupError,
-            } =
+          if (groupData) {
+            const { data: gradeData, error: gradeError } =
               await supabase
-                .from('groups')
-                .select(
-                  `
-                    id,
-                    name,
-                    location,
-                    description,
-                    is_active,
-                    grade_id
-                  `
-                )
-                .eq(
-                  'id',
-                  memberData.group_id
-                )
+                .from('grades')
+                .select(`
+                  id,
+                  name
+                `)
+                .eq('id', groupData.grade_id)
                 .maybeSingle();
 
-            if (groupError) {
-              throw groupError;
-            }
+            if (gradeError) throw gradeError;
 
-            if (groupData) {
-              let grade:
-                Grade | null =
-                null;
-
-              const {
-                data:
-                  gradeData,
-                error:
-                  gradeError,
-              } =
-                await supabase
-                  .from(
-                    'grades'
-                  )
-                  .select(
-                    `
-                      id,
-                      name
-                    `
-                  )
-                  .eq(
-                    'id',
-                    groupData.grade_id
-                  )
-                  .maybeSingle();
-
-              if (
-                gradeError
-              ) {
-                throw gradeError;
-              }
-
-              grade =
-                gradeData as Grade | null;
-
-              setGroup({
-                ...groupData,
-                grade,
-              } as Group);
-            } else {
-              setGroup(null);
-            }
+            setGroup({
+              ...groupData,
+              grade: gradeData as Grade | null,
+            } as Group);
           } else {
             setGroup(null);
           }
-
-          /* -----------------------------------------------
-             ANALYTICS SESSIONS
-          ------------------------------------------------ */
-
-          const {
-            data:
-              sessionData,
-            error:
-              sessionError,
-          } =
-            await supabase
-              .from(
-                'analytics_sessions'
-              )
-              .select(
-                `
-                  id,
-                  started_at,
-                  last_seen_at,
-                  ended_at,
-                  duration_seconds,
-                  is_online,
-                  device_type,
-                  browser,
-                  operating_system
-                `
-              )
-              .eq(
-                'user_id',
-                studentId
-              )
-              .order(
-                'started_at',
-                {
-                  ascending: false,
-                }
-              )
-              .limit(20);
-
-          if (sessionError) {
-            throw sessionError;
-          }
-
-          setSessions(
-            (sessionData ||
-              []) as AnalyticsSession[]
-          );
-
-          /* -----------------------------------------------
-             ANALYTICS EVENTS
-          ------------------------------------------------ */
-
-          const {
-            data:
-              eventData,
-            error:
-              eventError,
-          } =
-            await supabase
-              .from(
-                'analytics_events'
-              )
-              .select(
-                `
-                  id,
-                  event_type,
-                  page_path,
-                  content_id,
-                  content_type,
-                  metadata,
-                  created_at
-                `
-              )
-              .eq(
-                'user_id',
-                studentId
-              )
-              .order(
-                'created_at',
-                {
-                  ascending: false,
-                }
-              )
-              .limit(30);
-
-          if (eventError) {
-            throw eventError;
-          }
-
-          setEvents(
-            (eventData ||
-              []) as AnalyticsEvent[]
-          );
-
-          /* -----------------------------------------------
-             VIDEO WATCH
-          ------------------------------------------------ */
-
-          const {
-            data:
-              watchData,
-            error:
-              watchError,
-          } =
-            await supabase
-              .from(
-                'analytics_video_watch'
-              )
-              .select(
-                `
-                  id,
-                  video_id,
-                  watched_seconds,
-                  video_duration_seconds,
-                  watch_percentage,
-                  play_count,
-                  pause_count,
-                  completed,
-                  first_started_at,
-                  last_watched_at
-                `
-              )
-              .eq(
-                'user_id',
-                studentId
-              )
-              .order(
-                'last_watched_at',
-                {
-                  ascending: false,
-                }
-              )
-              .limit(30);
-
-          if (watchError) {
-            throw watchError;
-          }
-
-          const watches =
-            (watchData ||
-              []) as VideoWatch[];
-
-          setVideoWatches(
-            watches
-          );
-
-          /* -----------------------------------------------
-             LESSON TITLES
-          ------------------------------------------------ */
-
-          const videoIds =
-            watches
-              .map(
-                (item) =>
-                  item.video_id
-              )
-              .filter(Boolean);
-
-          if (
-            videoIds.length > 0
-          ) {
-            const {
-              data:
-                lessonData,
-              error:
-                lessonError,
-            } =
-              await supabase
-                .from(
-                  'lessons'
-                )
-                .select(
-                  `
-                    id,
-                    title
-                  `
-                )
-                .in(
-                  'id',
-                  videoIds
-                );
-
-            if (
-              lessonError
-            ) {
-              throw lessonError;
-            }
-
-            setLessons(
-              (lessonData ||
-                []) as Lesson[]
-            );
-          } else {
-            setLessons([]);
-          }
-        } catch (
-          loadError
-        ) {
-          console.error(
-            'Student profile error:',
-            loadError
-          );
-
-          setError(
-            loadError instanceof
-              Error
-              ? loadError.message
-              : 'تعذر تحميل بيانات الطالب'
-          );
-        } finally {
-          setLoading(false);
-          setRefreshing(false);
+        } else {
+          setGroup(null);
         }
-      },
-      [studentId]
-    );
+
+        /* =================================================
+           4. ANALYTICS SESSIONS
+        ================================================= */
+
+        const { data: sessionData, error: sessionError } =
+          await supabase
+            .from('analytics_sessions')
+            .select(`
+              id,
+              started_at,
+              last_seen_at,
+              ended_at,
+              duration_seconds,
+              is_online,
+              device_type,
+              browser,
+              operating_system
+            `)
+            .eq('user_id', studentId)
+            .order('started_at', {
+              ascending: false,
+            })
+            .limit(100);
+
+        if (sessionError) throw sessionError;
+
+        setSessions(
+          (sessionData || []) as AnalyticsSession[]
+        );
+
+        /* =================================================
+           5. ANALYTICS EVENTS
+        ================================================= */
+
+        const { data: eventData, error: eventError } =
+          await supabase
+            .from('analytics_events')
+            .select(`
+              id,
+              event_type,
+              page_path,
+              content_id,
+              content_type,
+              metadata,
+              created_at
+            `)
+            .eq('user_id', studentId)
+            .order('created_at', {
+              ascending: false,
+            })
+            .limit(100);
+
+        if (eventError) throw eventError;
+
+        setEvents(
+          (eventData || []) as AnalyticsEvent[]
+        );
+
+        /* =================================================
+           6. VIDEO WATCH
+        ================================================= */
+
+        const { data: watchData, error: watchError } =
+          await supabase
+            .from('analytics_video_watch')
+            .select(`
+              id,
+              video_id,
+              watched_seconds,
+              video_duration_seconds,
+              watch_percentage,
+              play_count,
+              pause_count,
+              completed,
+              first_started_at,
+              last_watched_at
+            `)
+            .eq('user_id', studentId)
+            .order('last_watched_at', {
+              ascending: false,
+            })
+            .limit(100);
+
+        if (watchError) throw watchError;
+
+        const watches =
+          (watchData || []) as VideoWatch[];
+
+        setVideoWatches(watches);
+
+        /* =================================================
+           8. EXAM ATTEMPTS
+        ================================================= */
+
+        const {
+          data: attemptData,
+          error: attemptError,
+        } = await supabase
+          .from('exam_attempts')
+          .select(`
+            id,
+            exam_id,
+            attempt_number,
+            started_at,
+            submitted_at,
+            status,
+            score,
+            created_at
+          `)
+          .eq('student_id', studentId)
+          .order('created_at', {
+            ascending: false,
+          })
+          .limit(100);
+
+        if (attemptError) throw attemptError;
+
+        const attempts =
+          (attemptData || []) as ExamAttempt[];
+
+        setExamAttempts(attempts);
+
+        /* =================================================
+           9. EXAMS
+        ================================================= */
+
+        const examIds = attempts
+          .map((attempt) => attempt.exam_id)
+          .filter(Boolean);
+
+        if (examIds.length > 0) {
+          const {
+            data: examData,
+            error: examError,
+          } = await supabase
+            .from('exams')
+            .select(`
+              id,
+              title,
+              max_score,
+              starts_at,
+              ends_at
+            `)
+            .in('id', examIds);
+
+          if (examError) throw examError;
+
+          setExams(
+            (examData || []) as Exam[]
+          );
+        } else {
+          setExams([]);
+        }
+
+        /* =================================================
+           10. ATTENDANCE
+        ================================================= */
+
+        const {
+          data: attendanceData,
+          error: attendanceError,
+        } = await supabase
+          .from('attendance')
+          .select(`
+            id,
+            session_id,
+            student_id,
+            status,
+            marked_at,
+            manually_modified
+          `)
+          .eq('student_id', studentId)
+          .order('marked_at', {
+            ascending: false,
+          })
+          .limit(100);
+
+        if (attendanceError) throw attendanceError;
+
+        setAttendanceRecords(
+          (attendanceData || []) as AttendanceRecord[]
+        );
+
+        /* =================================================
+           11. ASSIGNMENT SUBMISSIONS
+        ================================================= */
+
+        const {
+          data: submissionData,
+          error: submissionError,
+        } = await supabase
+          .from('assignment_submissions')
+          .select(`
+            id,
+            assignment_id,
+            submission_number,
+            status,
+            submitted_at,
+            score,
+            created_at
+          `)
+          .eq('student_id', studentId)
+          .order('created_at', {
+            ascending: false,
+          })
+          .limit(100);
+
+        if (submissionError) throw submissionError;
+
+        const submissions =
+          (submissionData || []) as AssignmentSubmission[];
+
+        setAssignmentSubmissions(submissions);
+
+        /* =================================================
+           12. ASSIGNMENTS
+        ================================================= */
+
+        const assignmentIds = submissions
+          .map(
+            (submission) =>
+              submission.assignment_id
+          )
+          .filter(Boolean);
+
+        if (assignmentIds.length > 0) {
+          const {
+            data: assignmentData,
+            error: assignmentError,
+          } = await supabase
+            .from('assignments')
+            .select(`
+              id,
+              title,
+              max_score,
+              deadline
+            `)
+            .in('id', assignmentIds);
+
+          if (assignmentError) throw assignmentError;
+
+          setAssignments(
+            (assignmentData || []) as Assignment[]
+          );
+        } else {
+          setAssignments([]);
+        }
+      } catch (loadError) {
+        console.error(
+          'Student profile error:',
+          loadError
+        );
+
+        setError(
+          loadError instanceof Error
+            ? loadError.message
+            : 'تعذر تحميل بيانات الطالب'
+        );
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [studentId]
+  );
 
   useEffect(() => {
-    loadStudent();
+    void loadStudent();
   }, [loadStudent]);
 
   /* =======================================================
      DERIVED DATA
   ======================================================= */
+
+
+    /* =======================================================
+     STUDENT ANALYTICS ENGINE
+  ======================================================= */
+
+  const analytics = useMemo(() => {
+    /* -------------------------
+       EXAMS
+    ------------------------- */
+
+    const submittedAttempts =
+      examAttempts.filter(
+        (attempt) =>
+          attempt.status === 'submitted' ||
+          attempt.submitted_at
+      );
+
+    const scoredAttempts =
+      submittedAttempts.filter(
+        (attempt) =>
+          attempt.score !== null &&
+          Number.isFinite(
+            Number(attempt.score)
+          )
+      );
+
+    const examMap = new Map<string, Exam>(
+      exams.map((exam) => [exam.id, exam])
+    );
+
+    const getScorePercentage = (attempt: ExamAttempt) => {
+      const score = Number(attempt.score);
+      const exam = examMap.get(attempt.exam_id);
+
+      if (!Number.isFinite(score)) {
+        return 0;
+      }
+
+      if (exam && Number(exam.max_score) > 0) {
+        return Math.min(100, Math.max(0, (score / Number(exam.max_score)) * 100));
+      }
+
+      return score;
+    };
+
+    const examScores =
+      scoredAttempts
+        .map((attempt) => {
+          const score = Number(attempt.score);
+          const exam = examMap.get(attempt.exam_id);
+
+          if (!Number.isFinite(score)) {
+            return null;
+          }
+
+          if (exam && Number(exam.max_score) > 0) {
+            return Math.min(100, Math.max(0, (score / Number(exam.max_score)) * 100));
+          }
+
+          return score;
+        })
+        .filter((score): score is number => score !== null);
+
+    const averageExamScore =
+      examScores.length > 0
+        ? examScores.reduce(
+            (sum, score) =>
+              sum + score,
+            0
+          ) / examScores.length
+        : 0;
+
+    const bestExamScore =
+      examScores.length > 0
+        ? Math.max(...examScores)
+        : 0;
+
+    const lowestExamScore =
+      examScores.length > 0
+        ? Math.min(...examScores)
+        : 0;
+
+    /* -------------------------
+       EXAM TREND
+    ------------------------- */
+
+    const chronologicalAttempts =
+      [...scoredAttempts].sort(
+        (a, b) =>
+          new Date(
+            a.submitted_at ||
+              a.created_at
+          ).getTime() -
+          new Date(
+            b.submitted_at ||
+              b.created_at
+          ).getTime()
+      );
+
+    let performanceTrend = 0;
+
+    if (
+      chronologicalAttempts.length >=
+      2
+    ) {
+      const half =
+        Math.floor(
+          chronologicalAttempts.length /
+            2
+        );
+
+      const firstHalf =
+        chronologicalAttempts.slice(
+          0,
+          half
+        );
+
+      const secondHalf =
+        chronologicalAttempts.slice(
+          half
+        );
+
+      const firstAverage =
+        firstHalf.reduce(
+          (sum, item) =>
+            sum +
+            getScorePercentage(item),
+          0
+        ) /
+        Math.max(
+          1,
+          firstHalf.length
+        );
+
+      const secondAverage =
+        secondHalf.reduce(
+          (sum, item) =>
+            sum +
+            getScorePercentage(item),
+          0
+        ) /
+        Math.max(
+          1,
+          secondHalf.length
+        );
+
+      performanceTrend =
+        secondAverage -
+        firstAverage;
+    }
+
+    /* -------------------------
+       ATTENDANCE
+    ------------------------- */
+
+    const attendanceTotal =
+      attendanceRecords.length;
+
+    const attendancePresent =
+      attendanceRecords.filter(
+        (record) =>
+          record.status ===
+            'present' ||
+          record.status ===
+            'late'
+      ).length;
+
+    const attendanceAbsent =
+      attendanceRecords.filter(
+        (record) =>
+          record.status ===
+            'absent'
+      ).length;
+
+    const attendanceRate =
+      attendanceTotal > 0
+        ? (attendancePresent /
+            attendanceTotal) *
+          100
+        : 0;
+
+    /* -------------------------
+       CONSECUTIVE ABSENCE
+    ------------------------- */
+
+    const chronologicalAttendance =
+      [...attendanceRecords].sort(
+        (a, b) =>
+          new Date(
+            b.marked_at
+          ).getTime() -
+          new Date(
+            a.marked_at
+          ).getTime()
+      );
+
+    let consecutiveAbsences = 0;
+
+    for (
+      const record of
+        chronologicalAttendance
+    ) {
+      if (
+        record.status ===
+        'absent'
+      ) {
+        consecutiveAbsences++;
+      } else {
+        break;
+      }
+    }
+
+    /* -------------------------
+       VIDEO
+    ------------------------- */
+
+    const watchSeconds =
+      videoWatches.reduce(
+        (sum, item) =>
+          sum +
+          Number(
+            item.watched_seconds ||
+              0
+          ),
+        0
+      );
+
+    const totalVideoDuration =
+      videoWatches.reduce(
+        (sum, item) =>
+          sum +
+          Number(
+            item.video_duration_seconds ||
+              0
+          ),
+        0
+      );
+
+    const averageWatchPercentage =
+      videoWatches.length > 0
+        ? videoWatches.reduce(
+            (sum, item) =>
+              sum +
+              Number(
+                item.watch_percentage ||
+                  0
+              ),
+            0
+          ) /
+          videoWatches.length
+        : 0;
+
+    const completedVideoCount =
+      videoWatches.filter(
+        (item) =>
+          item.completed
+      ).length;
+
+    const totalPlayCount =
+      videoWatches.reduce(
+        (sum, item) =>
+          sum +
+          Number(
+            item.play_count ||
+              0
+          ),
+        0
+      );
+
+    const totalPauseCount =
+      videoWatches.reduce(
+        (sum, item) =>
+          sum +
+          Number(
+            item.pause_count ||
+              0
+          ),
+        0
+      );
+
+    /* -------------------------
+       PLATFORM ACTIVITY
+    ------------------------- */
+
+    const sessionSeconds =
+      sessions.reduce(
+        (sum, session) =>
+          sum +
+          Number(
+            session.duration_seconds ||
+              0
+          ),
+        0
+      );
+
+    const loginEvents =
+      events.filter(
+        (event) =>
+          event.event_type ===
+          'login'
+      ).length;
+
+    const examEvents =
+      events.filter(
+        (event) =>
+          event.event_type ===
+            'exam_started' ||
+          event.event_type ===
+            'exam_submitted'
+      ).length;
+
+    const videoEvents =
+      events.filter(
+        (event) =>
+          event.event_type ===
+            'video_started' ||
+          event.event_type ===
+            'video_completed'
+      ).length;
+
+    /* -------------------------
+       ASSIGNMENTS
+    ------------------------- */
+
+    const gradedAssignments =
+      assignmentSubmissions.filter(
+        (submission) =>
+          submission.score !==
+          null
+      );
+
+    const assignmentAverage =
+      gradedAssignments.length >
+      0
+        ? gradedAssignments.reduce(
+            (sum, submission) =>
+              sum +
+              Number(
+                submission.score ||
+                  0
+              ),
+            0
+          ) /
+          gradedAssignments.length
+        : 0;
+
+    /* -------------------------
+       RISK SCORE
+       0 = safe
+       100 = high risk
+    ------------------------- */
+
+    let riskScore = 0;
+
+    const riskReasons: string[] =
+      [];
+
+    if (
+      consecutiveAbsences >=
+      2
+    ) {
+      riskScore += 30;
+
+      riskReasons.push(
+        `غياب ${consecutiveAbsences} حصص متتالية`
+      );
+    } else if (
+      attendanceRate < 70 &&
+      attendanceTotal >= 3
+    ) {
+      riskScore += 20;
+
+      riskReasons.push(
+        'نسبة الحضور منخفضة'
+      );
+    }
+
+    if (
+      averageExamScore > 0 &&
+      averageExamScore < 50
+    ) {
+      riskScore += 25;
+
+      riskReasons.push(
+        'متوسط درجات الامتحانات منخفض'
+      );
+    }
+
+    if (
+      performanceTrend <=
+      -15
+    ) {
+      riskScore += 20;
+
+      riskReasons.push(
+        'يوجد تراجع واضح في مستوى الدرجات'
+      );
+    }
+
+    if (
+      videoWatches.length > 0 &&
+      averageWatchPercentage < 40
+    ) {
+      riskScore += 15;
+
+      riskReasons.push(
+        'معدل إكمال الفيديوهات منخفض'
+      );
+    }
+
+    if (
+      sessions.length > 0 &&
+      sessionSeconds < 900
+    ) {
+      riskScore += 10;
+
+      riskReasons.push(
+        'النشاط على المنصة منخفض'
+      );
+    }
+
+    riskScore = Math.min(
+      100,
+      riskScore
+    );
+
+    let riskLevel =
+      'منخفض';
+
+    if (
+      riskScore >= 70
+    ) {
+      riskLevel =
+        'مرتفع جدًا';
+    } else if (
+      riskScore >= 45
+    ) {
+      riskLevel =
+        'مرتفع';
+    } else if (
+      riskScore >= 25
+    ) {
+      riskLevel =
+        'متوسط';
+    }
+
+    return {
+      submittedAttempts:
+        submittedAttempts.length,
+
+      averageExamScore,
+
+      bestExamScore,
+
+      lowestExamScore,
+
+      performanceTrend,
+
+      attendanceTotal,
+
+      attendancePresent,
+
+      attendanceAbsent,
+
+      attendanceRate,
+
+      consecutiveAbsences,
+
+      watchSeconds,
+
+      totalVideoDuration,
+
+      averageWatchPercentage,
+
+      completedVideoCount,
+
+      totalPlayCount,
+
+      totalPauseCount,
+
+      sessionSeconds,
+
+      loginEvents,
+
+      examEvents,
+
+      videoEvents,
+
+      assignmentAverage,
+
+      gradedAssignments:
+        gradedAssignments.length,
+
+      riskScore,
+
+      riskLevel,
+
+      riskReasons,
+    };
+  }, [
+    examAttempts,
+    attendanceRecords,
+    videoWatches,
+    sessions,
+    events,
+    assignmentSubmissions,
+    exams,
+  ]);
 
   const statusConfig =
     getStatusConfig(
@@ -911,26 +1421,6 @@ export default function StudentProfilePage() {
           Date.now() -
             2 * 60 * 1000
     );
-
-  const lessonTitleMap =
-    useMemo(() => {
-      const map =
-        new Map<
-          string,
-          string
-        >();
-
-      lessons.forEach(
-        (lesson) => {
-          map.set(
-            lesson.id,
-            lesson.title
-          );
-        }
-      );
-
-      return map;
-    }, [lessons]);
 
   const latestSessions =
     sessions.slice(0, 8);
@@ -1217,7 +1707,7 @@ export default function StudentProfilePage() {
             value={totalSessions.toLocaleString(
               'ar-EG'
             )}
-            description="آخر 20 جلسة مسجلة"
+            description="آخر 100 جلسة مسجلة"
             icon="💻"
           />
 
@@ -1282,8 +1772,7 @@ export default function StudentProfilePage() {
                 </p>
 
                 <p className="mt-2 text-sm font-black text-white">
-                  {studentProfile?.parent_phone ||
-                    'غير مسجل'}
+                  {'غير متوفر في بيانات الحساب الحالية'}
                 </p>
               </div>
 
@@ -1452,10 +1941,7 @@ export default function StudentProfilePage() {
 
                           <div className="min-w-0">
                             <p className="truncate text-sm font-black text-white">
-                              {lessonTitleMap.get(
-                                video.video_id
-                              ) ||
-                                'فيديو غير معروف'}
+                              {`فيديو #${video.video_id.slice(0, 8)}`}
                             </p>
 
                             <p className="mt-1 text-[11px] text-slate-600">
@@ -1744,45 +2230,9 @@ export default function StudentProfilePage() {
                 </p>
               </div>
 
-              <div className="rounded-2xl bg-white/[0.025] p-4">
-                <p className="text-[10px] font-bold text-slate-600">
-                  تاريخ الاعتماد
-                </p>
-
-                <p className="mt-2 text-sm font-black text-white">
-                  {formatDate(
-                    studentProfile?.approved_at
-                  )}
-                </p>
-              </div>
-
-              <div className="rounded-2xl bg-white/[0.025] p-4">
-                <p className="text-[10px] font-bold text-slate-600">
-                  تاريخ الإيقاف
-                </p>
-
-                <p className="mt-2 text-sm font-black text-white">
-                  {formatDate(
-                    studentProfile?.suspended_at
-                  )}
-                </p>
-              </div>
 
             </div>
 
-            {studentProfile?.registration_note && (
-              <div className="mt-4 rounded-2xl border border-amber-500/10 bg-amber-500/[0.03] p-4">
-                <p className="text-[10px] font-black text-amber-400">
-                  ملاحظة التسجيل
-                </p>
-
-                <p className="mt-2 text-xs leading-6 text-slate-400">
-                  {
-                    studentProfile.registration_note
-                  }
-                </p>
-              </div>
-            )}
           </Section>
         </div>
 
