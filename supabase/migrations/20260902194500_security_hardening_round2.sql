@@ -2,8 +2,10 @@
 -- Security hardening round 2
 -- ============================================================
 
--- Analytics events: the existing RLS already requires auth.uid() = user_id.
--- Add a server-owned RPC so the browser no longer supplies an identity field.
+-- Analytics events: the original RPC already exists with a BIGINT
+-- return type. PostgreSQL does not allow CREATE OR REPLACE to change
+-- a function's return type, so this migration preserves that contract.
+-- The browser never supplies user_id; the server derives it from auth.uid().
 create or replace function public.track_analytics_event(
   p_event_type text,
   p_page_path text default null,
@@ -12,21 +14,29 @@ create or replace function public.track_analytics_event(
   p_session_id uuid default null,
   p_metadata jsonb default '{}'::jsonb
 )
-returns void
+returns bigint
 language plpgsql
-security invoker
+security definer
 set search_path = public
 as $$
+declare
+  v_user_id uuid;
+  v_event_id bigint;
 begin
-  if auth.uid() is null then
+  v_user_id := auth.uid();
+
+  if v_user_id is null then
     raise exception 'Authentication required';
   end if;
 
   insert into public.analytics_events(
     user_id,event_type,page_path,content_id,content_type,session_id,metadata
   ) values (
-    auth.uid(),p_event_type,p_page_path,p_content_id,p_content_type,p_session_id,coalesce(p_metadata,'{}'::jsonb)
-  );
+    v_user_id,p_event_type,p_page_path,p_content_id,p_content_type,p_session_id,coalesce(p_metadata,'{}'::jsonb)
+  )
+  returning id into v_event_id;
+
+  return v_event_id;
 end;
 $$;
 
