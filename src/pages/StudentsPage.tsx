@@ -5,6 +5,28 @@ import React, {
   useMemo,
   useState,
 } from 'react';
+import {
+  Activity,
+  AlertCircle,
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  CircleUserRound,
+  Eye,
+  Filter,
+  GraduationCap,
+  Loader2,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+  UserCheck,
+  UserRoundX,
+  Users,
+  X,
+  Zap,
+} from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 import { supabase } from '../lib/supabase';
 
@@ -13,6 +35,8 @@ type UserStatus =
   | 'active'
   | 'suspended'
   | 'rejected';
+
+type StatusFilter = 'all' | UserStatus;
 
 interface Student {
   id: string;
@@ -25,46 +49,102 @@ interface Student {
   created_at: string;
 }
 
+interface Grade {
+  id: string;
+  name: string;
+}
+
+interface Group {
+  id: string;
+  name: string;
+  grade_id: string;
+}
+
+interface GroupMember {
+  student_id: string;
+  group_id: string;
+}
+
+interface StudentView {
+  student: Student;
+  group: Group | null;
+  grade: Grade | null;
+}
+
 const statusConfig: Record<
   UserStatus,
   {
     label: string;
-    icon: string;
+    icon: React.ReactNode;
     className: string;
+    dotClassName: string;
   }
 > = {
   active: {
     label: 'نشط',
-    icon: '✓',
+    icon: <Check size={13} strokeWidth={3} />,
     className:
-      'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+      'border-emerald-500/20 bg-emerald-500/10 text-emerald-400',
+    dotClassName: 'bg-emerald-400',
   },
   pending: {
-    label: 'قيد المراجعة',
-    icon: '◷',
+    label: 'بانتظار الموافقة',
+    icon: <AlertCircle size={13} strokeWidth={2.5} />,
     className:
-      'bg-amber-500/10 text-amber-400 border-amber-500/20',
+      'border-amber-500/20 bg-amber-500/10 text-amber-400',
+    dotClassName: 'bg-amber-400',
   },
   suspended: {
     label: 'موقوف',
-    icon: '!',
+    icon: <UserRoundX size={13} strokeWidth={2.5} />,
     className:
-      'bg-red-500/10 text-red-400 border-red-500/20',
+      'border-red-500/20 bg-red-500/10 text-red-400',
+    dotClassName: 'bg-red-400',
   },
   rejected: {
     label: 'مرفوض',
-    icon: '×',
+    icon: <X size={13} strokeWidth={3} />,
     className:
-      'bg-slate-500/10 text-slate-400 border-slate-500/20',
+      'border-slate-500/20 bg-slate-500/10 text-slate-400',
+    dotClassName: 'bg-slate-400',
   },
 };
 
-function formatDate(date: string) {
+function formatDate(date: string): string {
+  const parsedDate = new Date(date);
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return 'غير معروف';
+  }
+
   return new Intl.DateTimeFormat('ar-EG', {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
-  }).format(new Date(date));
+  }).format(parsedDate);
+}
+
+function getInitials(name: string): string {
+  const normalized = name.trim();
+
+  if (!normalized) {
+    return 'ط';
+  }
+
+  const words = normalized.split(/\s+/).filter(Boolean);
+
+  if (words.length === 1) {
+    return words[0].slice(0, 1);
+  }
+
+  return `${words[0].slice(0, 1)}${words[1].slice(0, 1)}`;
+}
+
+function normalizeSearchValue(value: string): string {
+  return value
+    .trim()
+    .toLocaleLowerCase('ar-EG')
+    .replace(/\s+/g, ' ');
 }
 
 function StatusBadge({
@@ -76,9 +156,12 @@ function StatusBadge({
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold ${config.className}`}
+      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-bold ${config.className}`}
     >
-      <span>{config.icon}</span>
+      <span
+        className={`h-1.5 w-1.5 rounded-full ${config.dotClassName}`}
+      />
+      {config.icon}
       {config.label}
     </span>
   );
@@ -87,42 +170,50 @@ function StatusBadge({
 function StatCard({
   title,
   value,
-  icon,
   description,
-  className,
+  icon,
+  iconClassName,
   onClick,
+  active,
 }: {
   title: string;
   value: number;
-  icon: string;
   description: string;
-  className: string;
+  icon: React.ReactNode;
+  iconClassName: string;
   onClick?: () => void;
+  active?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`group relative overflow-hidden rounded-2xl border p-5 text-right transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${className}`}
+      className={`group relative min-w-0 overflow-hidden rounded-2xl border p-5 text-right transition-all duration-300 ${
+        active
+          ? 'border-blue-500/30 bg-blue-500/[0.08] shadow-lg shadow-blue-950/20'
+          : 'border-white/[0.06] bg-[#11151d] hover:-translate-y-1 hover:border-white/[0.1] hover:bg-[#141923] hover:shadow-xl'
+      }`}
     >
-      <div className="absolute -left-8 -top-8 h-24 w-24 rounded-full bg-white/5 blur-3xl" />
+      <div className="pointer-events-none absolute -left-8 -top-8 h-28 w-28 rounded-full bg-white/[0.025] blur-3xl transition-transform duration-500 group-hover:scale-150" />
 
       <div className="relative flex items-start justify-between gap-4">
-        <div>
-          <p className="text-sm text-slate-500">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium text-slate-500">
             {title}
           </p>
 
-          <p className="mt-2 text-3xl font-black text-white">
+          <p className="mt-2 text-3xl font-black tracking-tight text-white">
             {value.toLocaleString('ar-EG')}
           </p>
 
-          <p className="mt-2 text-xs text-slate-600">
+          <p className="mt-2 truncate text-xs text-slate-600">
             {description}
           </p>
         </div>
 
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/[0.04] text-xl transition-transform group-hover:scale-110">
+        <div
+          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border transition-transform duration-300 group-hover:scale-110 ${iconClassName}`}
+        >
           {icon}
         </div>
       </div>
@@ -130,56 +221,128 @@ function StatCard({
   );
 }
 
+function FilterSelect({
+  value,
+  onChange,
+  children,
+  icon,
+  ariaLabel,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  children: React.ReactNode;
+  icon: React.ReactNode;
+  ariaLabel: string;
+}) {
+  return (
+    <div className="relative min-w-[170px] flex-1">
+      <div className="pointer-events-none absolute right-3 top-1/2 z-10 -translate-y-1/2 text-slate-500">
+        {icon}
+      </div>
+
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        aria-label={ariaLabel}
+        className="h-11 w-full appearance-none rounded-xl border border-white/[0.07] bg-[#0c1017] px-10 pl-9 text-sm font-medium text-slate-200 outline-none transition focus:border-blue-500/40 focus:ring-2 focus:ring-blue-500/10"
+      >
+        {children}
+      </select>
+
+      <ChevronDown
+        size={15}
+        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-600"
+      />
+    </div>
+  );
+}
+
+function EmptyState({
+  hasFilters,
+  onReset,
+}: {
+  hasFilters: boolean;
+  onReset: () => void;
+}) {
+  return (
+    <div className="flex min-h-[380px] flex-col items-center justify-center px-6 text-center">
+      <div className="flex h-20 w-20 items-center justify-center rounded-3xl border border-white/[0.06] bg-white/[0.025] text-slate-600">
+        {hasFilters ? (
+          <Search size={34} strokeWidth={1.5} />
+        ) : (
+          <Users size={34} strokeWidth={1.5} />
+        )}
+      </div>
+
+      <h3 className="mt-5 text-lg font-black text-white">
+        {hasFilters
+          ? 'لا توجد نتائج مطابقة'
+          : 'لا يوجد طلاب حتى الآن'}
+      </h3>
+
+      <p className="mt-2 max-w-md text-sm leading-7 text-slate-500">
+        {hasFilters
+          ? 'جرّب تغيير كلمة البحث أو إزالة بعض الفلاتر للوصول إلى النتائج المطلوبة.'
+          : 'عند تسجيل طلاب جدد وظهورهم في قاعدة البيانات سيظهرون هنا تلقائيًا.'}
+      </p>
+
+      {hasFilters && (
+        <button
+          type="button"
+          onClick={onReset}
+          className="mt-5 inline-flex items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-2.5 text-sm font-bold text-slate-300 transition hover:bg-white/[0.06] hover:text-white"
+        >
+          <X size={16} />
+          مسح الفلاتر
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function StudentsPage() {
+  const navigate = useNavigate();
+
   const [students, setStudents] = useState<Student[]>([]);
+  const [grades, setGrades] = useState<Grade[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [groupMembers, setGroupMembers] = useState<GroupMember[]>(
+    []
+  );
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const [search, setSearch] = useState('');
+  const [gradeFilter, setGradeFilter] = useState('all');
+  const [groupFilter, setGroupFilter] = useState('all');
   const [statusFilter, setStatusFilter] =
-    useState<'all' | UserStatus>('all');
+    useState<StatusFilter>('all');
 
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
-  const [selectedIds, setSelectedIds] =
-    useState<string[]>([]);
+  const [updatingId, setUpdatingId] = useState<string | null>(
+    null
+  );
 
-  const [selectedStudent, setSelectedStudent] =
-    useState<Student | null>(null);
+  const [toast, setToast] = useState<{
+    message: string;
+    type: 'success' | 'error';
+  } | null>(null);
 
-  const [editingStudent, setEditingStudent] =
-    useState<Student | null>(null);
-
-  const [deleteStudent, setDeleteStudent] =
-    useState<Student | null>(null);
-
-  const [editName, setEditName] = useState('');
-  const [editPhone, setEditPhone] = useState('');
-
-  const [savingEdit, setSavingEdit] = useState(false);
-  const [updatingId, setUpdatingId] =
-    useState<string | null>(null);
-
-  const [bulkLoading, setBulkLoading] =
-    useState(false);
-
-  const [message, setMessage] =
-    useState<string | null>(null);
-
-  const [messageType, setMessageType] =
-    useState<'success' | 'error'>('success');
-
-  const showMessage = useCallback(
+  const showToast = useCallback(
     (
-      text: string,
+      message: string,
       type: 'success' | 'error' = 'success'
     ) => {
-      setMessage(text);
-      setMessageType(type);
+      setToast({
+        message,
+        type,
+      });
 
       window.setTimeout(() => {
-        setMessage(null);
+        setToast(null);
       }, 3500);
     },
     []
@@ -194,37 +357,89 @@ export default function StudentsPage() {
           setLoading(true);
         }
 
-        const { data, error } = await supabase
-          .from('users')
-          .select(`
-            id,
-            full_name,
-            phone,
-            student_code,
-            status,
-            avatar_url,
-            is_active,
-            created_at
-          `)
-          .eq('role', 'student')
-          .order('created_at', {
-            ascending: false,
-          });
+        const [
+          studentsResult,
+          gradesResult,
+          groupsResult,
+          membersResult,
+        ] = await Promise.all([
+          supabase
+            .from('users')
+            .select(
+              `
+                id,
+                full_name,
+                phone,
+                student_code,
+                status,
+                avatar_url,
+                is_active,
+                created_at
+              `
+            )
+            .eq('role', 'student')
+            .order('created_at', {
+              ascending: false,
+            }),
 
-        if (error) {
-          throw error;
+          supabase
+            .from('grades')
+            .select('id, name')
+            .order('name', {
+              ascending: true,
+            }),
+
+          supabase
+            .from('groups')
+            .select('id, name, grade_id')
+            .order('name', {
+              ascending: true,
+            }),
+
+          supabase
+            .from('group_members')
+            .select('student_id, group_id'),
+        ]);
+
+        if (studentsResult.error) {
+          throw studentsResult.error;
         }
 
-        setStudents((data || []) as Student[]);
-        setSelectedIds([]);
+        if (gradesResult.error) {
+          throw gradesResult.error;
+        }
+
+        if (groupsResult.error) {
+          throw groupsResult.error;
+        }
+
+        if (membersResult.error) {
+          throw membersResult.error;
+        }
+
+        setStudents(
+          (studentsResult.data ?? []) as Student[]
+        );
+
+        setGrades(
+          (gradesResult.data ?? []) as Grade[]
+        );
+
+        setGroups(
+          (groupsResult.data ?? []) as Group[]
+        );
+
+        setGroupMembers(
+          (membersResult.data ?? []) as GroupMember[]
+        );
       } catch (error) {
         console.error(
-          'Students load error:',
+          'Students page load error:',
           error
         );
 
-        showMessage(
-          'حدث خطأ أثناء تحميل الطلاب',
+        showToast(
+          'حدث خطأ أثناء تحميل بيانات الطلاب',
           'error'
         );
       } finally {
@@ -232,81 +447,177 @@ export default function StudentsPage() {
         setRefreshing(false);
       }
     },
-    [showMessage]
+    [showToast]
   );
 
   useEffect(() => {
-    loadStudents();
+    void loadStudents();
   }, [loadStudents]);
 
   useEffect(() => {
     setPage(1);
-  }, [search, statusFilter, pageSize]);
+  }, [
+    search,
+    gradeFilter,
+    groupFilter,
+    statusFilter,
+    pageSize,
+  ]);
 
-  const stats = useMemo(
-    () => ({
+  const stats = useMemo(() => {
+    return {
       total: students.length,
 
       active: students.filter(
-        (student) =>
-          student.status === 'active'
+        (student) => student.status === 'active'
       ).length,
 
       pending: students.filter(
-        (student) =>
-          student.status === 'pending'
+        (student) => student.status === 'pending'
       ).length,
 
       suspended: students.filter(
-        (student) =>
-          student.status === 'suspended'
+        (student) => student.status === 'suspended'
       ).length,
+    };
+  }, [students]);
 
-      rejected: students.filter(
-        (student) =>
-          student.status === 'rejected'
-      ).length,
-    }),
-    [students]
-  );
+  const groupById = useMemo(() => {
+    return new Map(
+      groups.map((group) => [
+        group.id,
+        group,
+      ])
+    );
+  }, [groups]);
 
-  const filteredStudents = useMemo(() => {
-    const query = search
-      .trim()
-      .toLowerCase();
+  const gradeById = useMemo(() => {
+    return new Map(
+      grades.map((grade) => [
+        grade.id,
+        grade,
+      ])
+    );
+  }, [grades]);
 
-    return students.filter((student) => {
-      const matchesSearch =
-        !query ||
-        student.full_name
-          .toLowerCase()
-          .includes(query) ||
-        student.phone
-          .toLowerCase()
-          .includes(query) ||
-        (student.student_code || '')
-          .toLowerCase()
-          .includes(query);
+  const groupMemberByStudentId = useMemo(() => {
+    const map = new Map<string, GroupMember>();
 
-      const matchesStatus =
-        statusFilter === 'all' ||
-        student.status === statusFilter;
+    for (const member of groupMembers) {
+      if (!map.has(member.student_id)) {
+        map.set(
+          member.student_id,
+          member
+        );
+      }
+    }
 
-      return (
-        matchesSearch &&
-        matchesStatus
-      );
+    return map;
+  }, [groupMembers]);
+
+  const studentViews = useMemo<StudentView[]>(() => {
+    return students.map((student) => {
+      const membership =
+        groupMemberByStudentId.get(student.id);
+
+      const group = membership
+        ? groupById.get(membership.group_id) ?? null
+        : null;
+
+      const grade = group
+        ? gradeById.get(group.grade_id) ?? null
+        : null;
+
+      return {
+        student,
+        group,
+        grade,
+      };
     });
   }, [
     students,
+    groupMemberByStudentId,
+    groupById,
+    gradeById,
+  ]);
+
+  const availableGroups = useMemo(() => {
+    if (gradeFilter === 'all') {
+      return groups;
+    }
+
+    return groups.filter(
+      (group) =>
+        group.grade_id === gradeFilter
+    );
+  }, [groups, gradeFilter]);
+
+  useEffect(() => {
+    if (
+      groupFilter !== 'all' &&
+      !availableGroups.some(
+        (group) => group.id === groupFilter
+      )
+    ) {
+      setGroupFilter('all');
+    }
+  }, [availableGroups, groupFilter]);
+
+  const filteredStudents = useMemo(() => {
+    const query =
+      normalizeSearchValue(search);
+
+    return studentViews.filter(
+      ({
+        student,
+        group,
+        grade,
+      }) => {
+        const searchableText = [
+          student.full_name,
+          student.phone,
+          student.student_code ?? '',
+        ]
+          .join(' ')
+          .toLocaleLowerCase('ar-EG');
+
+        const matchesSearch =
+          !query ||
+          searchableText.includes(query);
+
+        const matchesGrade =
+          gradeFilter === 'all' ||
+          grade?.id === gradeFilter;
+
+        const matchesGroup =
+          groupFilter === 'all' ||
+          group?.id === groupFilter;
+
+        const matchesStatus =
+          statusFilter === 'all' ||
+          student.status === statusFilter;
+
+        return (
+          matchesSearch &&
+          matchesGrade &&
+          matchesGroup &&
+          matchesStatus
+        );
+      }
+    );
+  }, [
+    studentViews,
     search,
+    gradeFilter,
+    groupFilter,
     statusFilter,
   ]);
 
   const totalPages = Math.max(
     1,
     Math.ceil(
-      filteredStudents.length / pageSize
+      filteredStudents.length /
+        pageSize
     )
   );
 
@@ -329,510 +640,257 @@ export default function StudentsPage() {
     pageSize,
   ]);
 
-  const currentPageIds = useMemo(
-    () =>
-      paginatedStudents.map(
-        (student) => student.id
-      ),
-    [paginatedStudents]
-  );
+  const hasFilters =
+    search.trim().length > 0 ||
+    gradeFilter !== 'all' ||
+    groupFilter !== 'all' ||
+    statusFilter !== 'all';
 
-  const allCurrentPageSelected =
-    currentPageIds.length > 0 &&
-    currentPageIds.every((id) =>
-      selectedIds.includes(id)
-    );
-
-  const toggleStudentSelection = (
-    id: string
-  ) => {
-    setSelectedIds((current) =>
-      current.includes(id)
-        ? current.filter(
-            (item) => item !== id
-          )
-        : [...current, id]
-    );
-  };
-
-  const toggleCurrentPage = () => {
-    if (allCurrentPageSelected) {
-      setSelectedIds((current) =>
-        current.filter(
-          (id) =>
-            !currentPageIds.includes(id)
-        )
-      );
-    } else {
-      setSelectedIds((current) => [
-        ...new Set([
-          ...current,
-          ...currentPageIds,
-        ]),
-      ]);
-    }
-  };
-
-  const updateStatus = async (
-    studentId: string,
-    status: UserStatus
-  ) => {
-    try {
-      setUpdatingId(studentId);
-
-      const { error } = await supabase
-        .from('users')
-        .update({
-          status,
-          is_active:
-            status === 'active',
-        })
-        .eq('id', studentId);
-
-      if (error) {
-        throw error;
-      }
-
-      setStudents((current) =>
-        current.map((student) =>
-          student.id === studentId
-            ? {
-                ...student,
-                status,
-                is_active:
-                  status === 'active',
-              }
-            : student
-        )
-      );
-
-      if (
-        selectedStudent?.id ===
-        studentId
-      ) {
-        setSelectedStudent({
-          ...selectedStudent,
-          status,
-          is_active:
-            status === 'active',
-        });
-      }
-
-      const messages: Record<
-        UserStatus,
-        string
-      > = {
-        active:
-          'تم تفعيل حساب الطالب بنجاح ✓',
-        suspended:
-          'تم إيقاف حساب الطالب بنجاح',
-        rejected:
-          'تم رفض حساب الطالب',
-        pending:
-          'تم تغيير حالة الطالب',
-      };
-
-      showMessage(messages[status]);
-    } catch (error) {
-      console.error(
-        'Status update error:',
-        error
-      );
-
-      showMessage(
-        'تعذر تحديث حالة الطالب',
-        'error'
-      );
-    } finally {
-      setUpdatingId(null);
-    }
-  };
-
-  const bulkUpdateStatus = async (
-    status: UserStatus
-  ) => {
-    if (selectedIds.length === 0) {
-      showMessage(
-        'حدد طالبًا واحدًا على الأقل',
-        'error'
-      );
-      return;
-    }
-
-    try {
-      setBulkLoading(true);
-
-      const { error } = await supabase
-        .from('users')
-        .update({
-          status,
-          is_active:
-            status === 'active',
-        })
-        .in('id', selectedIds);
-
-      if (error) {
-        throw error;
-      }
-
-      setStudents((current) =>
-        current.map((student) =>
-          selectedIds.includes(student.id)
-            ? {
-                ...student,
-                status,
-                is_active:
-                  status === 'active',
-              }
-            : student
-        )
-      );
-
-      setSelectedIds([]);
-
-      showMessage(
-        `تم تحديث ${selectedIds.length.toLocaleString(
-          'ar-EG'
-        )} طالب بنجاح ✓`
-      );
-    } catch (error) {
-      console.error(
-        'Bulk update error:',
-        error
-      );
-
-      showMessage(
-        'تعذر تنفيذ الإجراء الجماعي',
-        'error'
-      );
-    } finally {
-      setBulkLoading(false);
-    }
-  };
-
-  const saveEdit = async () => {
-    if (!editingStudent) {
-      return;
-    }
-
-    const name = editName.trim();
-    const phone = editPhone.trim();
-
-    if (!name) {
-      showMessage(
-        'اسم الطالب مطلوب',
-        'error'
-      );
-      return;
-    }
-
-    try {
-      setSavingEdit(true);
-
-      const { error } = await supabase
-        .from('users')
-        .update({
-          full_name: name,
-          phone,
-        })
-        .eq(
-          'id',
-          editingStudent.id
-        );
-
-      if (error) {
-        throw error;
-      }
-
-      setStudents((current) =>
-        current.map((student) =>
-          student.id ===
-          editingStudent.id
-            ? {
-                ...student,
-                full_name: name,
-                phone,
-              }
-            : student
-        )
-      );
-
-      if (
-        selectedStudent?.id ===
-        editingStudent.id
-      ) {
-        setSelectedStudent({
-          ...selectedStudent,
-          full_name: name,
-          phone,
-        });
-      }
-
-      setEditingStudent(null);
-
-      showMessage(
-        'تم تعديل بيانات الطالب بنجاح ✓'
-      );
-    } catch (error) {
-      console.error(
-        'Edit student error:',
-        error
-      );
-
-      showMessage(
-        'تعذر تعديل بيانات الطالب',
-        'error'
-      );
-    } finally {
-      setSavingEdit(false);
-    }
-  };
-
-  const confirmDelete = async () => {
-    if (!deleteStudent) {
-      return;
-    }
-
-    try {
-      setUpdatingId(
-        deleteStudent.id
-      );
-
-      const { error } = await supabase
-        .from('users')
-        .delete()
-        .eq(
-          'id',
-          deleteStudent.id
-        );
-
-      if (error) {
-        throw error;
-      }
-
-      setStudents((current) =>
-        current.filter(
-          (student) =>
-            student.id !==
-            deleteStudent.id
-        )
-      );
-
-      setSelectedIds((current) =>
-        current.filter(
-          (id) =>
-            id !== deleteStudent.id
-        )
-      );
-
-      setDeleteStudent(null);
-
-      showMessage(
-        'تم حذف الطالب بنجاح'
-      );
-    } catch (error) {
-      console.error(
-        'Delete student error:',
-        error
-      );
-
-      showMessage(
-        'تعذر حذف الطالب. تأكد من صلاحيات قاعدة البيانات.',
-        'error'
-      );
-    } finally {
-      setUpdatingId(null);
-    }
-  };
-
-  const openEdit = (
-    student: Student
-  ) => {
-    setEditingStudent(student);
-    setEditName(student.full_name);
-    setEditPhone(student.phone);
-  };
-
-  const exportCSV = () => {
+  const visibleRange = useMemo(() => {
     if (filteredStudents.length === 0) {
-      showMessage(
-        'لا توجد بيانات لتصديرها',
-        'error'
-      );
-      return;
+      return {
+        from: 0,
+        to: 0,
+      };
     }
 
-    const headers = [
-      'الاسم',
-      'كود الطالب',
-      'الهاتف',
-      'الحالة',
-      'تاريخ التسجيل',
-    ];
+    return {
+      from:
+        (safePage - 1) * pageSize + 1,
+      to: Math.min(
+        safePage * pageSize,
+        filteredStudents.length
+      ),
+    };
+  }, [
+    filteredStudents.length,
+    safePage,
+    pageSize,
+  ]);
 
-    const rows =
-      filteredStudents.map(
-        (student) => [
-          student.full_name,
-          student.student_code || '',
-          student.phone || '',
-          statusConfig[
-            student.status
-          ].label,
-          formatDate(
-            student.created_at
-          ),
-        ]
-      );
-
-    const csv = [
-      headers,
-      ...rows,
-    ]
-      .map((row) =>
-        row
-          .map((value) =>
-            `"${String(value).replace(
-              /"/g,
-              '""'
-            )}"`
-          )
-          .join(',')
-      )
-      .join('\n');
-
-    const blob = new Blob(
-      ['\uFEFF' + csv],
-      {
-        type: 'text/csv;charset=utf-8;',
-      }
-    );
-
-    const url =
-      URL.createObjectURL(blob);
-
-    const link =
-      document.createElement('a');
-
-    link.href = url;
-    link.download =
-      'students.csv';
-
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-
-    URL.revokeObjectURL(url);
-
-    showMessage(
-      'تم تجهيز ملف الطلاب للتصدير ✓'
-    );
-  };
-
-  const clearFilters = () => {
+  const resetFilters = () => {
     setSearch('');
+    setGradeFilter('all');
+    setGroupFilter('all');
     setStatusFilter('all');
     setPage(1);
+  };
+
+  const handleStatusChange = async (
+    student: Student,
+    nextStatus: UserStatus
+  ) => {
+    if (updatingId) {
+      return;
+    }
+
+    try {
+      setUpdatingId(student.id);
+
+      const nextIsActive =
+        nextStatus === 'active';
+
+      const { error } = await supabase
+        .from('users')
+        .update({
+          status: nextStatus,
+          is_active: nextIsActive,
+        })
+        .eq('id', student.id);
+
+      if (error) {
+        throw error;
+      }
+
+      setStudents((current) =>
+        current.map((item) =>
+          item.id === student.id
+            ? {
+                ...item,
+                status: nextStatus,
+                is_active: nextIsActive,
+              }
+            : item
+        )
+      );
+
+      if (nextStatus === 'active') {
+        showToast(
+          `تم تفعيل حساب ${student.full_name} بنجاح ✓`
+        );
+      } else if (
+        nextStatus === 'suspended'
+      ) {
+        showToast(
+          `تم إيقاف حساب ${student.full_name} بنجاح`
+        );
+      } else {
+        showToast(
+          'تم تحديث حالة الطالب بنجاح ✓'
+        );
+      }
+    } catch (error) {
+      console.error(
+        'Student status update error:',
+        error
+      );
+
+      showToast(
+        'تعذر تغيير حالة حساب الطالب',
+        'error'
+      );
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const openProfile = (studentId: string) => {
+    navigate(
+      `/admin/students/${studentId}`
+    );
+  };
+
+  const renderStatusAction = (
+    student: Student
+  ) => {
+    const isUpdating =
+      updatingId === student.id;
+
+    if (student.status === 'pending') {
+      return (
+        <button
+          type="button"
+          disabled={isUpdating}
+          onClick={() =>
+            void handleStatusChange(
+              student,
+              'active'
+            )
+          }
+          className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 text-xs font-bold text-emerald-400 transition hover:border-emerald-500/30 hover:bg-emerald-500/15 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {isUpdating ? (
+            <Loader2
+              size={14}
+              className="animate-spin"
+            />
+          ) : (
+            <UserCheck size={14} />
+          )}
+          تفعيل
+        </button>
+      );
+    }
+
+    if (student.status === 'active') {
+      return (
+        <button
+          type="button"
+          disabled={isUpdating}
+          onClick={() =>
+            void handleStatusChange(
+              student,
+              'suspended'
+            )
+          }
+          className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-red-500/20 bg-red-500/10 px-3 text-xs font-bold text-red-400 transition hover:border-red-500/30 hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {isUpdating ? (
+            <Loader2
+              size={14}
+              className="animate-spin"
+            />
+          ) : (
+            <UserRoundX size={14} />
+          )}
+          إيقاف
+        </button>
+      );
+    }
+
+    if (
+      student.status === 'suspended' ||
+      student.status === 'rejected'
+    ) {
+      return (
+        <button
+          type="button"
+          disabled={isUpdating}
+          onClick={() =>
+            void handleStatusChange(
+              student,
+              'active'
+            )
+          }
+          className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 text-xs font-bold text-emerald-400 transition hover:border-emerald-500/30 hover:bg-emerald-500/15 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {isUpdating ? (
+            <Loader2
+              size={14}
+              className="animate-spin"
+            />
+          ) : (
+            <Zap size={14} />
+          )}
+          تفعيل
+        </button>
+      );
+    }
+
+    return null;
   };
 
   return (
     <div
       dir="rtl"
-      className="min-h-screen bg-[#07090f] text-white"
+      className="min-h-full bg-[#07090f] text-white"
     >
-      {/* BACKGROUND */}
-
-      <div className="pointer-events-none fixed inset-0 overflow-hidden">
-        <div className="absolute -right-40 -top-40 h-[420px] w-[420px] rounded-full bg-amber-500/10 blur-[130px]" />
-
-        <div className="absolute -bottom-40 -left-40 h-[420px] w-[420px] rounded-full bg-blue-500/10 blur-[130px]" />
-
-        <div
-          className="absolute inset-0 opacity-[0.025]"
-          style={{
-            backgroundImage:
-              'linear-gradient(rgba(255,255,255,.5) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.5) 1px, transparent 1px)',
-            backgroundSize: '45px 45px',
-          }}
-        />
-      </div>
-
-      <main className="relative mx-auto max-w-[1650px] p-4 sm:p-6 lg:p-8">
-
-        {/* HEADER */}
-
-        <header className="mb-7 rounded-3xl border border-white/[0.06] bg-white/[0.025] p-6 backdrop-blur-xl">
-          <div className="flex flex-col gap-6 xl:flex-row xl:items-center xl:justify-between">
-
-            <div>
-              <div className="mb-3 flex items-center gap-2">
-                <span className="rounded-lg bg-amber-500/10 px-3 py-1 text-xs font-bold text-amber-400">
-                  إدارة المنصة
-                </span>
-
-                <span className="text-slate-700">
-                  /
-                </span>
-
-                <span className="text-xs text-slate-500">
-                  الطلاب
-                </span>
-              </div>
-
-              <h1 className="text-3xl font-black tracking-tight sm:text-4xl">
-                إدارة الطلاب
-              </h1>
-
-              <p className="mt-2 text-sm text-slate-500">
-                تحكم كامل في حسابات الطلاب
-                وحالاتهم وبياناتهم.
-              </p>
+      <div className="mx-auto w-full max-w-[1800px] space-y-6 p-4 sm:p-6 lg:p-8">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+          <div>
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-blue-500/10 bg-blue-500/[0.06] px-3 py-1.5 text-xs font-bold text-blue-400">
+              <Users size={14} />
+              إدارة الطلاب
             </div>
 
-            <div className="flex flex-wrap gap-2">
+            <h1 className="text-2xl font-black tracking-tight text-white sm:text-3xl">
+              الطلاب
+            </h1>
 
-              <button
-                type="button"
-                onClick={exportCSV}
-                className="flex h-11 items-center gap-2 rounded-xl border border-emerald-500/10 bg-emerald-500/5 px-4 text-sm font-bold text-emerald-400 transition hover:bg-emerald-500/10"
-              >
-                ⇩ تصدير CSV
-              </button>
-
-              <button
-                type="button"
-                onClick={() =>
-                  loadStudents(true)
-                }
-                disabled={refreshing}
-                className="flex h-11 items-center gap-2 rounded-xl border border-white/[0.07] bg-white/[0.04] px-5 text-sm font-bold transition hover:bg-white/[0.08] disabled:opacity-50"
-              >
-                <span
-                  className={
-                    refreshing
-                      ? 'animate-spin'
-                      : ''
-                  }
-                >
-                  ↻
-                </span>
-
-                تحديث
-              </button>
-            </div>
+            <p className="mt-2 max-w-2xl text-sm leading-7 text-slate-500">
+              إدارة ومتابعة جميع الطلاب المسجلين في
+              منصة كيمياء أستاذ أحمد محمد رمضان.
+            </p>
           </div>
-        </header>
 
-        {/* STATS */}
+          <button
+            type="button"
+            onClick={() =>
+              void loadStudents(true)
+            }
+            disabled={refreshing}
+            className="inline-flex h-11 items-center justify-center gap-2 self-start rounded-xl border border-white/[0.07] bg-[#11151d] px-4 text-sm font-bold text-slate-300 transition hover:border-white/[0.12] hover:bg-[#151a23] hover:text-white disabled:cursor-not-allowed disabled:opacity-50 xl:self-auto"
+          >
+            <RefreshCw
+              size={16}
+              className={
+                refreshing
+                  ? 'animate-spin'
+                  : ''
+              }
+            />
+            تحديث البيانات
+          </button>
+        </div>
 
-        <section className="mb-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard
             title="إجمالي الطلاب"
             value={stats.total}
-            icon="👨‍🎓"
-            description="كل حسابات الطلاب"
-            className="border-blue-500/10 bg-blue-500/[0.03]"
+            description="جميع الحسابات المسجلة"
+            icon={<Users size={23} />}
+            iconClassName="border-blue-500/10 bg-blue-500/10 text-blue-400"
+            active={statusFilter === 'all'}
             onClick={() => {
               setStatusFilter('all');
               setPage(1);
@@ -840,11 +898,12 @@ export default function StudentsPage() {
           />
 
           <StatCard
-            title="نشطون"
+            title="الطلاب النشطون"
             value={stats.active}
-            icon="✓"
-            description="لديهم وصول للمنصة"
-            className="border-emerald-500/10 bg-emerald-500/[0.03]"
+            description="حسابات يمكنها استخدام المنصة"
+            icon={<ShieldCheck size={23} />}
+            iconClassName="border-emerald-500/10 bg-emerald-500/10 text-emerald-400"
+            active={statusFilter === 'active'}
             onClick={() => {
               setStatusFilter('active');
               setPage(1);
@@ -852,11 +911,12 @@ export default function StudentsPage() {
           />
 
           <StatCard
-            title="قيد المراجعة"
+            title="بانتظار الموافقة"
             value={stats.pending}
-            icon="◷"
-            description="تحتاج قرار الإدارة"
-            className="border-amber-500/10 bg-amber-500/[0.03]"
+            description="طلاب يحتاجون مراجعة الإدارة"
+            icon={<AlertCircle size={23} />}
+            iconClassName="border-amber-500/10 bg-amber-500/10 text-amber-400"
+            active={statusFilter === 'pending'}
             onClick={() => {
               setStatusFilter('pending');
               setPage(1);
@@ -864,269 +924,206 @@ export default function StudentsPage() {
           />
 
           <StatCard
-            title="موقوفون"
+            title="الموقوفون"
             value={stats.suspended}
-            icon="!"
-            description="تم إيقاف الوصول"
-            className="border-red-500/10 bg-red-500/[0.03]"
+            description="حسابات تم تعطيلها"
+            icon={<UserRoundX size={23} />}
+            iconClassName="border-red-500/10 bg-red-500/10 text-red-400"
+            active={statusFilter === 'suspended'}
             onClick={() => {
-              setStatusFilter(
-                'suspended'
-              );
+              setStatusFilter('suspended');
               setPage(1);
             }}
           />
+        </div>
 
-          <StatCard
-            title="مرفوضون"
-            value={stats.rejected}
-            icon="×"
-            description="طلبات مرفوضة"
-            className="border-slate-500/10 bg-slate-500/[0.03]"
-            onClick={() => {
-              setStatusFilter(
-                'rejected'
-              );
-              setPage(1);
-            }}
-          />
-        </section>
+        <section className="overflow-hidden rounded-2xl border border-white/[0.06] bg-[#11151d]">
+          <div className="border-b border-white/[0.06] p-4 sm:p-5">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-center">
+              <div className="relative flex-1">
+                <Search
+                  size={18}
+                  className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-600"
+                />
 
-        {/* BULK ACTION BAR */}
-
-        {selectedIds.length > 0 && (
-          <div className="mb-5 flex flex-col gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] p-4 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <p className="font-black text-amber-300">
-                تم تحديد{' '}
-                {selectedIds.length.toLocaleString(
-                  'ar-EG'
-                )}{' '}
-                طالب
-              </p>
-
-              <p className="mt-1 text-xs text-slate-500">
-                اختر الإجراء الذي تريد تنفيذه
-                على الطلاب المحددين.
-              </p>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-
-              <button
-                type="button"
-                disabled={bulkLoading}
-                onClick={() =>
-                  bulkUpdateStatus(
-                    'active'
-                  )
-                }
-                className="rounded-xl bg-emerald-500/10 px-4 py-2.5 text-xs font-bold text-emerald-400 transition hover:bg-emerald-500/20 disabled:opacity-50"
-              >
-                ✓ تفعيل الكل
-              </button>
-
-              <button
-                type="button"
-                disabled={bulkLoading}
-                onClick={() =>
-                  bulkUpdateStatus(
-                    'suspended'
-                  )
-                }
-                className="rounded-xl bg-red-500/10 px-4 py-2.5 text-xs font-bold text-red-400 transition hover:bg-red-500/20 disabled:opacity-50"
-              >
-                ⏸ إيقاف الكل
-              </button>
-
-              <button
-                type="button"
-                onClick={() =>
-                  setSelectedIds([])
-                }
-                className="rounded-xl border border-white/[0.07] bg-white/[0.03] px-4 py-2.5 text-xs font-bold text-slate-400 transition hover:bg-white/[0.08]"
-              >
-                إلغاء التحديد
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* TABLE */}
-
-        <section className="overflow-hidden rounded-3xl border border-white/[0.06] bg-white/[0.025]">
-
-          {/* TOOLBAR */}
-
-          <div className="border-b border-white/[0.06] p-5">
-
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-
-              <div>
-                <h2 className="text-xl font-black">
-                  جميع الطلاب
-                </h2>
-
-                <p className="mt-1 text-xs text-slate-500">
-                  عرض{' '}
-                  {filteredStudents.length.toLocaleString(
-                    'ar-EG'
-                  )}{' '}
-                  من أصل{' '}
-                  {students.length.toLocaleString(
-                    'ar-EG'
-                  )}{' '}
-                  طالب
-                </p>
-              </div>
-
-              <div className="flex flex-col gap-3 md:flex-row">
-
-                <div className="relative">
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-600">
-                    ⌕
-                  </span>
-
-                  <input
-                    value={search}
-                    onChange={(e) =>
-                      setSearch(
-                        e.target.value
-                      )
-                    }
-                    placeholder="ابحث بالاسم أو الهاتف أو الكود..."
-                    className="w-full rounded-xl border border-white/[0.07] bg-black/20 py-3 pr-9 pl-4 text-sm outline-none transition placeholder:text-slate-600 focus:border-amber-500/40 md:w-80"
-                  />
-                </div>
-
-                <select
-                  value={statusFilter}
-                  onChange={(e) =>
-                    setStatusFilter(
-                      e.target.value as
-                        | 'all'
-                        | UserStatus
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(event) =>
+                    setSearch(
+                      event.target.value
                     )
                   }
-                  className="rounded-xl border border-white/[0.07] bg-[#11151d] px-4 py-3 text-sm font-bold text-white outline-none focus:border-amber-500/40"
-                >
-                  <option value="all">
-                    كل الحالات
-                  </option>
+                  placeholder="ابحث باسم الطالب أو الموبايل أو كود الطالب..."
+                  className="h-12 w-full rounded-xl border border-white/[0.07] bg-[#0c1017] px-12 text-sm text-white outline-none placeholder:text-slate-600 transition focus:border-blue-500/40 focus:ring-2 focus:ring-blue-500/10"
+                />
 
-                  <option value="active">
-                    نشط
-                  </option>
-
-                  <option value="pending">
-                    قيد المراجعة
-                  </option>
-
-                  <option value="suspended">
-                    موقوف
-                  </option>
-
-                  <option value="rejected">
-                    مرفوض
-                  </option>
-                </select>
-
-                {(search ||
-                  statusFilter !==
-                    'all') && (
+                {search && (
                   <button
                     type="button"
-                    onClick={
-                      clearFilters
+                    onClick={() =>
+                      setSearch('')
                     }
-                    className="rounded-xl border border-white/[0.07] bg-white/[0.03] px-4 py-3 text-xs font-bold text-slate-400 transition hover:bg-white/[0.08]"
+                    className="absolute left-3 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-slate-500 transition hover:bg-white/[0.05] hover:text-white"
+                    aria-label="مسح البحث"
                   >
-                    مسح الفلاتر
+                    <X size={15} />
                   </button>
                 )}
               </div>
+
+              <div className="flex items-center gap-2 text-slate-600">
+                <Filter size={17} />
+                <span className="hidden text-xs font-bold sm:inline">
+                  الفلاتر
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-col gap-3 lg:flex-row">
+              <FilterSelect
+                value={gradeFilter}
+                onChange={setGradeFilter}
+                icon={
+                  <GraduationCap
+                    size={17}
+                  />
+                }
+                ariaLabel="فلترة الصف الدراسي"
+              >
+                <option value="all">
+                  كل الصفوف الدراسية
+                </option>
+
+                {grades.map((grade) => (
+                  <option
+                    key={grade.id}
+                    value={grade.id}
+                  >
+                    {grade.name}
+                  </option>
+                ))}
+              </FilterSelect>
+
+              <FilterSelect
+                value={groupFilter}
+                onChange={setGroupFilter}
+                icon={
+                  <Users size={17} />
+                }
+                ariaLabel="فلترة المجموعة"
+              >
+                <option value="all">
+                  كل المجموعات
+                </option>
+
+                {availableGroups.map(
+                  (group) => (
+                    <option
+                      key={group.id}
+                      value={group.id}
+                    >
+                      {group.name}
+                    </option>
+                  )
+                )}
+              </FilterSelect>
+
+              <FilterSelect
+                value={statusFilter}
+                onChange={(value) =>
+                  setStatusFilter(
+                    value as StatusFilter
+                  )
+                }
+                icon={
+                  <Activity size={17} />
+                }
+                ariaLabel="فلترة حالة الحساب"
+              >
+                <option value="all">
+                  كل الحالات
+                </option>
+                <option value="active">
+                  نشط
+                </option>
+                <option value="pending">
+                  بانتظار الموافقة
+                </option>
+                <option value="suspended">
+                  موقوف
+                </option>
+                <option value="rejected">
+                  مرفوض
+                </option>
+              </FilterSelect>
+
+              {hasFilters && (
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-white/[0.07] bg-white/[0.025] px-4 text-sm font-bold text-slate-400 transition hover:border-white/[0.12] hover:bg-white/[0.05] hover:text-white"
+                >
+                  <X size={16} />
+                  مسح
+                </button>
+              )}
             </div>
           </div>
 
-          {/* LOADING */}
-
           {loading ? (
-            <div className="p-20 text-center">
-              <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-white/10 border-t-amber-400" />
-
-              <p className="text-sm text-slate-500">
-                جاري تحميل الطلاب...
-              </p>
-            </div>
-          ) : paginatedStudents.length ===
-            0 ? (
-            <div className="p-20 text-center">
-              <div className="mb-4 text-5xl">
-                🔎
+            <div className="flex min-h-[430px] flex-col items-center justify-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-blue-500/10 bg-blue-500/[0.06]">
+                <Loader2
+                  size={25}
+                  className="animate-spin text-blue-400"
+                />
               </div>
 
-              <h3 className="font-black">
-                لا توجد نتائج
-              </h3>
-
-              <p className="mt-2 text-sm text-slate-500">
-                جرّب تغيير البحث أو فلتر
-                الحالة.
+              <p className="mt-4 text-sm font-bold text-slate-400">
+                جاري تحميل بيانات الطلاب...
               </p>
 
-              <button
-                type="button"
-                onClick={
-                  clearFilters
-                }
-                className="mt-5 rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-black text-black"
-              >
-                عرض كل الطلاب
-              </button>
+              <p className="mt-1 text-xs text-slate-600">
+                يتم جلب الطلاب والمجموعات والصفوف الدراسية
+              </p>
             </div>
+          ) : filteredStudents.length === 0 ? (
+            <EmptyState
+              hasFilters={hasFilters}
+              onReset={resetFilters}
+            />
           ) : (
             <>
-              <div className="overflow-x-auto">
-
-                <table className="w-full min-w-[1200px] text-right">
-
+              <div className="hidden overflow-x-auto lg:block">
+                <table className="w-full min-w-[1050px] border-collapse">
                   <thead>
-                    <tr className="border-b border-white/[0.05] text-xs text-slate-600">
-
-                      <th className="w-12 px-5 py-4">
-                        <input
-                          type="checkbox"
-                          checked={
-                            allCurrentPageSelected
-                          }
-                          onChange={
-                            toggleCurrentPage
-                          }
-                          className="h-4 w-4 accent-amber-500"
-                        />
-                      </th>
-
-                      <th className="px-5 py-4 font-bold">
+                    <tr className="border-b border-white/[0.05] bg-white/[0.015] text-right">
+                      <th className="px-5 py-4 text-xs font-bold text-slate-600">
                         الطالب
                       </th>
 
-                      <th className="px-5 py-4 font-bold">
-                        الكود
+                      <th className="px-5 py-4 text-xs font-bold text-slate-600">
+                        كود الطالب
                       </th>
 
-                      <th className="px-5 py-4 font-bold">
-                        الهاتف
+                      <th className="px-5 py-4 text-xs font-bold text-slate-600">
+                        الموبايل
                       </th>
 
-                      <th className="px-5 py-4 font-bold">
+                      <th className="px-5 py-4 text-xs font-bold text-slate-600">
+                        الصف / المجموعة
+                      </th>
+
+                      <th className="px-5 py-4 text-xs font-bold text-slate-600">
                         الحالة
                       </th>
 
-                      <th className="px-5 py-4 font-bold">
-                        التسجيل
+                      <th className="px-5 py-4 text-xs font-bold text-slate-600">
+                        تاريخ التسجيل
                       </th>
 
-                      <th className="px-5 py-4 font-bold">
+                      <th className="px-5 py-4 text-xs font-bold text-slate-600">
                         الإجراءات
                       </th>
                     </tr>
@@ -1134,45 +1131,32 @@ export default function StudentsPage() {
 
                   <tbody>
                     {paginatedStudents.map(
-                      (student) => {
-                        const isSelected =
-                          selectedIds.includes(
-                            student.id
+                      ({
+                        student,
+                        group,
+                        grade,
+                      }) => {
+                        const initials =
+                          getInitials(
+                            student.full_name
                           );
-
-                        const isUpdating =
-                          updatingId ===
-                          student.id;
 
                         return (
                           <tr
-                            key={
-                              student.id
-                            }
-                            className={`border-b border-white/[0.04] transition ${
-                              isSelected
-                                ? 'bg-amber-500/[0.035]'
-                                : 'hover:bg-white/[0.025]'
-                            }`}
+                            key={student.id}
+                            className="group border-b border-white/[0.04] transition-colors hover:bg-white/[0.02]"
                           >
-                            <td className="px-5 py-5">
-                              <input
-                                type="checkbox"
-                                checked={
-                                  isSelected
-                                }
-                                onChange={() =>
-                                  toggleStudentSelection(
+                            <td className="px-5 py-4">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  openProfile(
                                     student.id
                                   )
                                 }
-                                className="h-4 w-4 accent-amber-500"
-                              />
-                            </td>
-
-                            <td className="px-5 py-5">
-                              <div className="flex items-center gap-3">
-                                <div className="relative flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/[0.07] bg-gradient-to-br from-amber-500/20 to-blue-500/20 font-black text-amber-400">
+                                className="flex items-center gap-3 text-right"
+                              >
+                                <div className="relative flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-blue-500/10 bg-blue-500/[0.08] text-sm font-black text-blue-400">
                                   {student.avatar_url ? (
                                     <img
                                       src={
@@ -1184,49 +1168,62 @@ export default function StudentsPage() {
                                       className="h-full w-full object-cover"
                                     />
                                   ) : (
-                                    student.full_name.charAt(
-                                      0
-                                    )
+                                    initials
                                   )}
-
-                                  <span
-                                    className={`absolute bottom-0 left-0 h-2.5 w-2.5 rounded-full border-2 border-[#11151d] ${
-                                      student.is_active
-                                        ? 'bg-emerald-400'
-                                        : 'bg-red-400'
-                                    }`}
-                                  />
                                 </div>
 
                                 <div className="min-w-0">
-                                  <p className="truncate font-bold">
+                                  <p className="max-w-[230px] truncate text-sm font-bold text-white transition-colors group-hover:text-blue-300">
                                     {
                                       student.full_name
                                     }
                                   </p>
 
-                                  <p className="mt-1 text-[11px] text-slate-600">
-                                    ID:{' '}
-                                    {student.id.slice(
-                                      0,
-                                      8
-                                    )}
+                                  <p className="mt-1 text-xs text-slate-600">
+                                    طالب
                                   </p>
                                 </div>
+                              </button>
+                            </td>
+
+                            <td className="px-5 py-4">
+                              <span className="rounded-lg border border-blue-500/10 bg-blue-500/[0.05] px-2.5 py-1.5 font-mono text-xs font-bold text-blue-400">
+                                {student.student_code ??
+                                  'غير مُحدد'}
+                              </span>
+                            </td>
+
+                            <td className="px-5 py-4">
+                              <div className="space-y-1">
+                                <p
+                                  dir="ltr"
+                                  className="w-fit text-sm font-semibold text-slate-300"
+                                >
+                                  {student.phone ||
+                                    'غير مُحدد'}
+                                </p>
+
+                                <p className="text-[11px] text-slate-600">
+                                  رقم الطالب
+                                </p>
                               </div>
                             </td>
 
-                            <td className="px-5 py-5 font-mono text-xs text-amber-400">
-                              {student.student_code ||
-                                '—'}
+                            <td className="px-5 py-4">
+                              <div className="space-y-1">
+                                <p className="text-sm font-bold text-slate-300">
+                                  {grade?.name ??
+                                    'غير محدد'}
+                                </p>
+
+                                <p className="text-xs text-slate-600">
+                                  {group?.name ??
+                                    'بدون مجموعة'}
+                                </p>
+                              </div>
                             </td>
 
-                            <td className="px-5 py-5 text-sm text-slate-400">
-                              {student.phone ||
-                                '—'}
-                            </td>
-
-                            <td className="px-5 py-5">
+                            <td className="px-5 py-4">
                               <StatusBadge
                                 status={
                                   student.status
@@ -1234,127 +1231,34 @@ export default function StudentsPage() {
                               />
                             </td>
 
-                            <td className="px-5 py-5 text-xs text-slate-500">
-                              {formatDate(
-                                student.created_at
-                              )}
+                            <td className="px-5 py-4">
+                              <span className="whitespace-nowrap text-xs font-medium text-slate-500">
+                                {formatDate(
+                                  student.created_at
+                                )}
+                              </span>
                             </td>
 
-                            <td className="px-5 py-5">
-                              <div className="flex flex-wrap gap-1.5">
-
+                            <td className="px-5 py-4">
+                              <div className="flex items-center gap-2">
                                 <button
                                   type="button"
                                   onClick={() =>
-                                    setSelectedStudent(
-                                      student
+                                    openProfile(
+                                      student.id
                                     )
                                   }
-                                  className="rounded-lg border border-white/[0.07] bg-white/[0.03] px-2.5 py-2 text-xs font-bold text-slate-300 transition hover:bg-white/[0.08]"
+                                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-blue-500/15 bg-blue-500/[0.06] px-3 text-xs font-bold text-blue-400 transition hover:border-blue-500/30 hover:bg-blue-500/10"
                                 >
-                                  👁 عرض
+                                  <Eye
+                                    size={15}
+                                  />
+                                  البروفايل
                                 </button>
 
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    openEdit(
-                                      student
-                                    )
-                                  }
-                                  className="rounded-lg bg-blue-500/10 px-2.5 py-2 text-xs font-bold text-blue-400 transition hover:bg-blue-500/20"
-                                >
-                                  ✏️ تعديل
-                                </button>
-
-                                {student.status ===
-                                  'pending' && (
-                                  <>
-                                    <button
-                                      type="button"
-                                      disabled={
-                                        isUpdating
-                                      }
-                                      onClick={() =>
-                                        updateStatus(
-                                          student.id,
-                                          'active'
-                                        )
-                                      }
-                                      className="rounded-lg bg-emerald-500/10 px-2.5 py-2 text-xs font-bold text-emerald-400 transition hover:bg-emerald-500/20 disabled:opacity-40"
-                                    >
-                                      قبول
-                                    </button>
-
-                                    <button
-                                      type="button"
-                                      disabled={
-                                        isUpdating
-                                      }
-                                      onClick={() =>
-                                        updateStatus(
-                                          student.id,
-                                          'rejected'
-                                        )
-                                      }
-                                      className="rounded-lg bg-red-500/10 px-2.5 py-2 text-xs font-bold text-red-400 transition hover:bg-red-500/20 disabled:opacity-40"
-                                    >
-                                      رفض
-                                    </button>
-                                  </>
+                                {renderStatusAction(
+                                  student
                                 )}
-
-                                {student.status ===
-                                  'active' && (
-                                  <button
-                                    type="button"
-                                    disabled={
-                                      isUpdating
-                                    }
-                                    onClick={() =>
-                                      updateStatus(
-                                        student.id,
-                                        'suspended'
-                                      )
-                                    }
-                                    className="rounded-lg bg-red-500/10 px-2.5 py-2 text-xs font-bold text-red-400 transition hover:bg-red-500/20 disabled:opacity-40"
-                                  >
-                                    إيقاف
-                                  </button>
-                                )}
-
-                                {(student.status ===
-                                  'suspended' ||
-                                  student.status ===
-                                    'rejected') && (
-                                  <button
-                                    type="button"
-                                    disabled={
-                                      isUpdating
-                                    }
-                                    onClick={() =>
-                                      updateStatus(
-                                        student.id,
-                                        'active'
-                                      )
-                                    }
-                                    className="rounded-lg bg-emerald-500/10 px-2.5 py-2 text-xs font-bold text-emerald-400 transition hover:bg-emerald-500/20 disabled:opacity-40"
-                                  >
-                                    تفعيل
-                                  </button>
-                                )}
-
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setDeleteStudent(
-                                      student
-                                    )
-                                  }
-                                  className="rounded-lg bg-red-500/5 px-2.5 py-2 text-xs font-bold text-red-500 transition hover:bg-red-500/10"
-                                >
-                                  🗑
-                                </button>
                               </div>
                             </td>
                           </tr>
@@ -1365,52 +1269,206 @@ export default function StudentsPage() {
                 </table>
               </div>
 
-              {/* PAGINATION */}
+              <div className="divide-y divide-white/[0.04] lg:hidden">
+                {paginatedStudents.map(
+                  ({
+                    student,
+                    group,
+                    grade,
+                  }) => {
+                    const initials =
+                      getInitials(
+                        student.full_name
+                      );
 
-              <div className="flex flex-col gap-4 border-t border-white/[0.05] p-5 sm:flex-row sm:items-center sm:justify-between">
+                    return (
+                      <div
+                        key={student.id}
+                        className="p-4 transition hover:bg-white/[0.02]"
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-blue-500/10 bg-blue-500/[0.08] text-sm font-black text-blue-400">
+                            {student.avatar_url ? (
+                              <img
+                                src={
+                                  student.avatar_url
+                                }
+                                alt={
+                                  student.full_name
+                                }
+                                className="h-full w-full object-cover"
+                              />
+                            ) : (
+                              initials
+                            )}
+                          </div>
 
-                <div className="text-xs text-slate-600">
-                  صفحة{' '}
-                  <span className="font-bold text-slate-300">
-                    {safePage}
-                  </span>{' '}
-                  من{' '}
-                  <span className="font-bold text-slate-300">
-                    {totalPages}
-                  </span>
-                </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  openProfile(
+                                    student.id
+                                  )
+                                }
+                                className="min-w-0 text-right"
+                              >
+                                <p className="truncate text-sm font-black text-white">
+                                  {
+                                    student.full_name
+                                  }
+                                </p>
 
-                <div className="flex items-center gap-2">
+                                <p className="mt-1 font-mono text-[11px] text-blue-400">
+                                  {student.student_code ??
+                                    'بدون كود'}
+                                </p>
+                              </button>
+
+                              <StatusBadge
+                                status={
+                                  student.status
+                                }
+                              />
+                            </div>
+
+                            <div className="mt-4 grid grid-cols-2 gap-3">
+                              <div className="rounded-xl border border-white/[0.05] bg-white/[0.02] p-3">
+                                <p className="text-[10px] font-bold text-slate-600">
+                                  الموبايل
+                                </p>
+
+                                <p
+                                  dir="ltr"
+                                  className="mt-1 text-xs font-semibold text-slate-300"
+                                >
+                                  {student.phone ||
+                                    'غير محدد'}
+                                </p>
+                              </div>
+
+                              <div className="rounded-xl border border-white/[0.05] bg-white/[0.02] p-3">
+                                <p className="text-[10px] font-bold text-slate-600">
+                                  الصف
+                                </p>
+
+                                <p className="mt-1 truncate text-xs font-semibold text-slate-300">
+                                  {grade?.name ??
+                                    'غير محدد'}
+                                </p>
+                              </div>
+
+                              <div className="rounded-xl border border-white/[0.05] bg-white/[0.02] p-3">
+                                <p className="text-[10px] font-bold text-slate-600">
+                                  المجموعة
+                                </p>
+
+                                <p className="mt-1 truncate text-xs font-semibold text-slate-300">
+                                  {group?.name ??
+                                    'بدون مجموعة'}
+                                </p>
+                              </div>
+
+                              <div className="rounded-xl border border-white/[0.05] bg-white/[0.02] p-3">
+                                <p className="text-[10px] font-bold text-slate-600">
+                                  التسجيل
+                                </p>
+
+                                <p className="mt-1 text-xs font-semibold text-slate-300">
+                                  {formatDate(
+                                    student.created_at
+                                  )}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="mt-3 flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  openProfile(
+                                    student.id
+                                  )
+                                }
+                                className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-xl border border-blue-500/15 bg-blue-500/[0.06] text-xs font-bold text-blue-400 transition hover:bg-blue-500/10"
+                              >
+                                <Eye
+                                  size={15}
+                                />
+                                عرض البروفايل
+                              </button>
+
+                              <div className="shrink-0">
+                                {renderStatusAction(
+                                  student
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+                )}
+              </div>
+
+              <div className="flex flex-col gap-4 border-t border-white/[0.05] p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-wrap items-center gap-3">
+                  <p className="text-xs font-medium text-slate-600">
+                    عرض{' '}
+                    <span className="font-bold text-slate-400">
+                      {visibleRange.from.toLocaleString(
+                        'ar-EG'
+                      )}
+                    </span>{' '}
+                    إلى{' '}
+                    <span className="font-bold text-slate-400">
+                      {visibleRange.to.toLocaleString(
+                        'ar-EG'
+                      )}
+                    </span>{' '}
+                    من أصل{' '}
+                    <span className="font-bold text-slate-400">
+                      {filteredStudents.length.toLocaleString(
+                        'ar-EG'
+                      )}
+                    </span>
+                  </p>
+
+                  <div className="h-4 w-px bg-white/[0.08]" />
 
                   <select
                     value={pageSize}
-                    onChange={(e) =>
+                    onChange={(event) =>
                       setPageSize(
                         Number(
-                          e.target.value
+                          event.target.value
                         )
                       )
                     }
-                    className="rounded-lg border border-white/[0.07] bg-[#11151d] px-3 py-2 text-xs text-white outline-none"
+                    className="rounded-lg border border-white/[0.06] bg-[#0c1017] px-2 py-1.5 text-xs font-bold text-slate-400 outline-none"
+                    aria-label="عدد الطلاب في الصفحة"
                   >
                     <option value={10}>
                       10 / صفحة
                     </option>
-
                     <option value={20}>
                       20 / صفحة
                     </option>
-
                     <option value={50}>
                       50 / صفحة
                     </option>
+                    <option value={100}>
+                      100 / صفحة
+                    </option>
                   </select>
+                </div>
 
+                <div className="flex items-center justify-between gap-2 sm:justify-end">
                   <button
                     type="button"
-                    disabled={
-                      safePage <= 1
-                    }
+                    disabled={safePage <= 1}
                     onClick={() =>
                       setPage(
                         (current) =>
@@ -1420,10 +1478,25 @@ export default function StudentsPage() {
                           )
                       )
                     }
-                    className="rounded-lg border border-white/[0.07] bg-white/[0.03] px-4 py-2 text-xs font-bold text-slate-300 disabled:opacity-30"
+                    className="inline-flex h-9 items-center justify-center gap-1 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 text-xs font-bold text-slate-400 transition hover:bg-white/[0.05] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
                   >
+                    <ChevronRight
+                      size={15}
+                    />
                     السابق
                   </button>
+
+                  <div className="flex h-9 min-w-9 items-center justify-center rounded-lg border border-blue-500/15 bg-blue-500/[0.06] px-3 text-xs font-black text-blue-400">
+                    {safePage.toLocaleString(
+                      'ar-EG'
+                    )}
+                    <span className="mx-1 text-slate-700">
+                      /
+                    </span>
+                    {totalPages.toLocaleString(
+                      'ar-EG'
+                    )}
+                  </div>
 
                   <button
                     type="button"
@@ -1440,9 +1513,12 @@ export default function StudentsPage() {
                           )
                       )
                     }
-                    className="rounded-lg border border-white/[0.07] bg-white/[0.03] px-4 py-2 text-xs font-bold text-slate-300 disabled:opacity-30"
+                    className="inline-flex h-9 items-center justify-center gap-1 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 text-xs font-bold text-slate-400 transition hover:bg-white/[0.05] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
                   >
                     التالي
+                    <ChevronLeft
+                      size={15}
+                    />
                   </button>
                 </div>
               </div>
@@ -1450,436 +1526,72 @@ export default function StudentsPage() {
           )}
         </section>
 
-        {/* FOOTER */}
-
-        <footer className="mt-7 flex flex-col gap-2 border-t border-white/[0.05] pt-5 text-xs text-slate-600 sm:flex-row sm:items-center sm:justify-between">
-          <p>
-            منصة كيمياء أستاذ أحمد محمد رمضان
-          </p>
-
-          <p>
-            نظام إدارة الطلاب • الإصدار المتقدم
-          </p>
-        </footer>
-      </main>
-
-      {/* VIEW MODAL */}
-
-      {selectedStudent && (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-4 backdrop-blur-md"
-          onClick={() =>
-            setSelectedStudent(null)
-          }
-        >
-          <div
-            className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-3xl border border-white/[0.08] bg-[#11151d] p-6 shadow-2xl"
-            onClick={(e) =>
-              e.stopPropagation()
-            }
-          >
-            <div className="mb-6 flex items-start justify-between">
-              <div>
-                <p className="text-xs font-bold text-amber-400">
-                  ملف الطالب
-                </p>
-
-                <h2 className="mt-1 text-2xl font-black">
-                  تفاصيل الحساب
-                </h2>
-              </div>
-
-              <button
-                type="button"
-                onClick={() =>
-                  setSelectedStudent(null)
-                }
-                className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/[0.04] text-slate-400 hover:bg-white/[0.08] hover:text-white"
-              >
-                ×
-              </button>
+        {!loading && students.length > 0 && (
+          <div className="flex items-center gap-3 rounded-2xl border border-white/[0.05] bg-[#11151d]/60 px-4 py-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-500/[0.07] text-blue-400">
+              <CircleUserRound size={18} />
             </div>
 
-            <div className="mb-5 flex items-center gap-4 rounded-2xl border border-white/[0.06] bg-white/[0.025] p-5">
-              <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-amber-500/20 to-blue-500/20 text-2xl font-black text-amber-400">
-                {selectedStudent.avatar_url ? (
-                  <img
-                    src={
-                      selectedStudent.avatar_url
-                    }
-                    alt={
-                      selectedStudent.full_name
-                    }
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  selectedStudent.full_name.charAt(
-                    0
-                  )
-                )}
-              </div>
-
-              <div>
-                <h3 className="text-xl font-black">
-                  {
-                    selectedStudent.full_name
-                  }
-                </h3>
-
-                <div className="mt-2">
-                  <StatusBadge
-                    status={
-                      selectedStudent.status
-                    }
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-
-              <div className="rounded-2xl border border-white/[0.06] bg-black/10 p-4">
-                <p className="text-xs text-slate-600">
-                  كود الطالب
-                </p>
-
-                <p className="mt-2 font-mono font-bold text-amber-400">
-                  {selectedStudent.student_code ||
-                    '—'}
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-white/[0.06] bg-black/10 p-4">
-                <p className="text-xs text-slate-600">
-                  رقم الهاتف
-                </p>
-
-                <p className="mt-2 font-bold text-slate-200">
-                  {selectedStudent.phone ||
-                    '—'}
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-white/[0.06] bg-black/10 p-4">
-                <p className="text-xs text-slate-600">
-                  تاريخ التسجيل
-                </p>
-
-                <p className="mt-2 font-bold text-slate-200">
-                  {formatDate(
-                    selectedStudent.created_at
-                  )}
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-white/[0.06] bg-black/10 p-4">
-                <p className="text-xs text-slate-600">
-                  حالة الوصول
-                </p>
-
-                <p
-                  className={`mt-2 font-bold ${
-                    selectedStudent.is_active
-                      ? 'text-emerald-400'
-                      : 'text-red-400'
-                  }`}
-                >
-                  {selectedStudent.is_active
-                    ? 'مسموح بالدخول'
-                    : 'غير مسموح'}
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-white/[0.06] bg-black/10 p-4 sm:col-span-2">
-                <p className="text-xs text-slate-600">
-                  معرف الحساب
-                </p>
-
-                <p className="mt-2 break-all font-mono text-xs text-slate-400">
-                  {selectedStudent.id}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-6 flex flex-wrap gap-2">
-
-              <button
-                type="button"
-                onClick={() => {
-                  openEdit(
-                    selectedStudent
-                  );
-                  setSelectedStudent(
-                    null
-                  );
-                }}
-                className="rounded-xl bg-blue-500/10 px-4 py-3 text-sm font-bold text-blue-400 hover:bg-blue-500/20"
-              >
-                ✏️ تعديل
-              </button>
-
-              {selectedStudent.status ===
-                'active' && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    updateStatus(
-                      selectedStudent.id,
-                      'suspended'
-                    )
-                  }
-                  className="rounded-xl bg-red-500/10 px-4 py-3 text-sm font-bold text-red-400 hover:bg-red-500/20"
-                >
-                  ⏸ إيقاف الحساب
-                </button>
-              )}
-
-              {(selectedStudent.status ===
-                'suspended' ||
-                selectedStudent.status ===
-                  'rejected') && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    updateStatus(
-                      selectedStudent.id,
-                      'active'
-                    )
-                  }
-                  className="rounded-xl bg-emerald-500/10 px-4 py-3 text-sm font-bold text-emerald-400 hover:bg-emerald-500/20"
-                >
-                  ✓ تفعيل الحساب
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* EDIT MODAL */}
-
-      {editingStudent && (
-        <div
-          className="fixed inset-0 z-[120] flex items-center justify-center bg-black/75 p-4 backdrop-blur-md"
-          onClick={() =>
-            !savingEdit &&
-            setEditingStudent(null)
-          }
-        >
-          <div
-            className="w-full max-w-lg rounded-3xl border border-white/[0.08] bg-[#11151d] p-6 shadow-2xl"
-            onClick={(e) =>
-              e.stopPropagation()
-            }
-          >
-            <div className="mb-6 flex items-start justify-between">
-              <div>
-                <p className="text-xs font-bold text-blue-400">
-                  تعديل البيانات
-                </p>
-
-                <h2 className="mt-1 text-2xl font-black">
-                  تعديل الطالب
-                </h2>
-              </div>
-
-              <button
-                type="button"
-                disabled={savingEdit}
-                onClick={() =>
-                  setEditingStudent(
-                    null
-                  )
-                }
-                className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/[0.04] text-slate-400 hover:bg-white/[0.08]"
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="space-y-5">
-
-              <div>
-                <label className="mb-2 block text-sm font-bold text-slate-300">
-                  اسم الطالب
-                </label>
-
-                <input
-                  value={editName}
-                  onChange={(e) =>
-                    setEditName(
-                      e.target.value
-                    )
-                  }
-                  className="w-full rounded-xl border border-white/[0.07] bg-black/20 px-4 py-3 text-sm text-white outline-none focus:border-blue-500/50"
-                  placeholder="اسم الطالب"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-bold text-slate-300">
-                  رقم الهاتف
-                </label>
-
-                <input
-                  value={editPhone}
-                  onChange={(e) =>
-                    setEditPhone(
-                      e.target.value
-                    )
-                  }
-                  className="w-full rounded-xl border border-white/[0.07] bg-black/20 px-4 py-3 text-sm text-white outline-none focus:border-blue-500/50"
-                  placeholder="رقم الهاتف"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-bold text-slate-300">
-                  كود الطالب
-                </label>
-
-                <div className="rounded-xl border border-white/[0.05] bg-white/[0.02] px-4 py-3 font-mono text-sm text-amber-400">
-                  {editingStudent.student_code ||
-                    '—'}
-                </div>
-
-                <p className="mt-2 text-xs text-slate-600">
-                  كود الطالب لا يتم تغييره من
-                  هنا.
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-7 flex gap-3">
-
-              <button
-                type="button"
-                disabled={savingEdit}
-                onClick={saveEdit}
-                className="flex flex-1 items-center justify-center rounded-xl bg-blue-500 px-5 py-3 text-sm font-black text-white hover:bg-blue-400 disabled:opacity-50"
-              >
-                {savingEdit
-                  ? 'جاري الحفظ...'
-                  : 'حفظ التعديلات'}
-              </button>
-
-              <button
-                type="button"
-                disabled={savingEdit}
-                onClick={() =>
-                  setEditingStudent(
-                    null
-                  )
-                }
-                className="rounded-xl border border-white/[0.07] bg-white/[0.03] px-5 py-3 text-sm font-bold text-slate-300 hover:bg-white/[0.08]"
-              >
-                إلغاء
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* DELETE CONFIRMATION */}
-
-      {deleteStudent && (
-        <div
-          className="fixed inset-0 z-[130] flex items-center justify-center bg-black/80 p-4 backdrop-blur-md"
-          onClick={() =>
-            !updatingId &&
-            setDeleteStudent(null)
-          }
-        >
-          <div
-            className="w-full max-w-md rounded-3xl border border-red-500/10 bg-[#11151d] p-6 shadow-2xl"
-            onClick={(e) =>
-              e.stopPropagation()
-            }
-          >
-            <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-red-500/10 text-2xl">
-              🗑
-            </div>
-
-            <h2 className="text-xl font-black">
-              حذف الطالب؟
-            </h2>
-
-            <p className="mt-2 text-sm leading-6 text-slate-500">
-              هل أنت متأكد من حذف حساب
-              <span className="font-bold text-white">
-                {' '}
-                {deleteStudent.full_name}{' '}
+            <p className="text-xs leading-6 text-slate-600">
+              البيانات المعروضة من قاعدة Supabase
+              مباشرة، وتغيير حالة الحساب يتم حفظه
+              فورًا في جدول{' '}
+              <span className="font-mono text-slate-500">
+                users
               </span>
-              ؟ هذا الإجراء لا يمكن التراجع
-              عنه.
+              .
             </p>
-
-            <div className="mt-6 flex gap-3">
-
-              <button
-                type="button"
-                disabled={
-                  updatingId ===
-                  deleteStudent.id
-                }
-                onClick={
-                  confirmDelete
-                }
-                className="flex-1 rounded-xl bg-red-500 px-5 py-3 text-sm font-black text-white hover:bg-red-400 disabled:opacity-50"
-              >
-                {updatingId ===
-                deleteStudent.id
-                  ? 'جاري الحذف...'
-                  : 'نعم، حذف الطالب'}
-              </button>
-
-              <button
-                type="button"
-                disabled={
-                  updatingId ===
-                  deleteStudent.id
-                }
-                onClick={() =>
-                  setDeleteStudent(
-                    null
-                  )
-                }
-                className="rounded-xl border border-white/[0.07] bg-white/[0.03] px-5 py-3 text-sm font-bold text-slate-300 hover:bg-white/[0.08]"
-              >
-                إلغاء
-              </button>
-            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      {/* TOAST */}
-
-      {message && (
-        <div className="fixed bottom-6 left-1/2 z-[200] w-full max-w-md -translate-x-1/2 px-4">
+      {toast && (
+        <div
+          className="fixed bottom-5 left-1/2 z-[100] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 sm:left-auto sm:right-5 sm:w-auto sm:max-w-sm sm:translate-x-0"
+          role="status"
+          aria-live="polite"
+        >
           <div
-            className={`flex items-center gap-3 rounded-2xl border bg-[#11151d]/95 px-5 py-3 text-sm font-bold text-white shadow-2xl backdrop-blur-xl ${
-              messageType ===
-              'success'
-                ? 'border-emerald-500/20'
-                : 'border-red-500/20'
+            className={`flex items-center gap-3 rounded-2xl border px-4 py-3.5 shadow-2xl backdrop-blur-xl ${
+              toast.type === 'success'
+                ? 'border-emerald-500/20 bg-[#0d1714]/95'
+                : 'border-red-500/20 bg-[#180f12]/95'
             }`}
           >
-            <span
-              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
-                messageType ===
-                'success'
+            <div
+              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
+                toast.type === 'success'
                   ? 'bg-emerald-500/10 text-emerald-400'
                   : 'bg-red-500/10 text-red-400'
               }`}
             >
-              {messageType ===
-              'success'
-                ? '✓'
-                : '!'}
-            </span>
+              {toast.type ===
+              'success' ? (
+                <Check
+                  size={18}
+                  strokeWidth={3}
+                />
+              ) : (
+                <AlertCircle
+                  size={18}
+                />
+              )}
+            </div>
 
-            {message}
+            <p className="flex-1 text-sm font-bold text-slate-200">
+              {toast.message}
+            </p>
+
+            <button
+              type="button"
+              onClick={() =>
+                setToast(null)
+              }
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-600 transition hover:bg-white/[0.05] hover:text-white"
+              aria-label="إغلاق"
+            >
+              <X size={15} />
+            </button>
           </div>
         </div>
       )}
